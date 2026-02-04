@@ -1,0 +1,237 @@
+<!-- 
+  BRACELET VTO - 2D Overlay
+  cosmic-engine | 2026-02-04
+  Egyszerű 2D képkövetés MediaPipe Hands-sel
+-->
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ékszer VTO - 2D Overlay</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #111;
+            font-family: Arial, sans-serif;
+        }
+        #input-container {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            background: rgba(0,0,0,0.8);
+            padding: 20px;
+            border-radius: 8px;
+            color: white;
+        }
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+        }
+        #video {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 200px;
+            height: 150px;
+            border-radius: 8px;
+            opacity: 0.7;
+            transform: scaleX(-1); /* Tükörkép */
+        }
+        input[type="file"] {
+            margin-top: 10px;
+        }
+        .instruction {
+            font-size: 12px;
+            color: #aaa;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="input-container">
+        <label>📿 Töltsd fel a karkötő képét (PNG átlátszó háttérrel):</label>
+        <input type="file" id="imageInput" accept="image/png,image/jpeg">
+        <div class="instruction">
+            A kép a csuklódra fog kerülni. Mozgasd a kezedet!
+        </div>
+    </div>
+
+    <!-- Kamera preview (kicsi, sarokban) -->
+    <video id="video" playsinline></video>
+    
+    <!-- Fő canvas, ide rajzolunk -->
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const videoElement = document.getElementById('video');
+        
+        let jewelryImage = null;
+        let hands = null;
+        let camera = null;
+        
+        // Kép feltöltés kezelése
+        document.getElementById('imageInput').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    jewelryImage = new Image();
+                    jewelryImage.onload = () => {
+                        console.log('Kép betöltve:', jewelryImage.width, 'x', jewelryImage.height);
+                    };
+                    jewelryImage.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Canvas méret beállítása ablakhoz
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Segédfüggvény: két pont távolsága
+        function distance(p1, p2) {
+            return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+        }
+
+        // Segédfüggvény: szög két pont között (radián)
+        function angle(p1, p2) {
+            return Math.atan2(p2.y - p1.y, p2.x - p1.x);
+        }
+
+        // MediaPipe Hands callback
+        function onResults(results) {
+            // Törlés
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Tükör effekt: a canvas-t is tükrözzük, hogy a kézmozgás "természetes" legyen
+            ctx.save();
+            ctx.translate(canvas.width, 0);
+            ctx.scale(-1, 1);
+            
+            // Kamera kép rajzolása (opcionális, ha nem akarod látni a hátteret, kommentezd ki)
+            // ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+            
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                
+                // Landmark indexek:
+                // 0: csukló (WRIST)
+                // 5: mutatóujj alap (INDEX_FINGER_MCP)
+                // 17: kisujj alap (PINKY_MCP)
+                // 9: középső ujj alap (MIDDLE_FINGER_MCP)
+                
+                const wrist = landmarks[0];
+                const indexBase = landmarks[5];
+                const pinkyBase = landmarks[17];
+                const middleBase = landmarks[9];
+                
+                // Pozíció: a csukló és a középső ujj között (kicsit feljebb a csuklónál)
+                const centerX = (wrist.x + middleBase.x) / 2;
+                const centerY = (wrist.y + middleBase.y) / 2;
+                
+                // Scale: a kéz szélessége (mutatóujj alap - kisujj alap távolsága)
+                // Ez adja meg, hogy milyen széles a kézfej
+                const handWidth = distance(indexBase, pinkyBase);
+                const baseScale = handWidth * 2.5; // Finomhangolható szorzó
+                
+                // Forgatás: a kéz hossztengelye (csukló -> középső ujj)
+                const rotation = angle(wrist, middleBase) + Math.PI / 2; // +90 fok, hogy vízszintes kép álljon
+                
+                // Ha van feltöltött kép, rajzoljuk
+                if (jewelryImage) {
+                    const imgWidth = jewelryImage.width;
+                    const imgHeight = jewelryImage.height;
+                    const aspect = imgWidth / imgHeight;
+                    
+                    // Méretezés: a kéz szélességéhez igazítva
+                    const drawWidth = canvas.width * baseScale;
+                    const drawHeight = drawWidth / aspect;
+                    
+                    // Pozíció képernyőre konvertálva (MediaPipe 0-1 koordináták)
+                    const screenX = centerX * canvas.width;
+                    const screenY = centerY * canvas.height;
+                    
+                    ctx.save();
+                    
+                    // Transzformációk
+                    ctx.translate(screenX, screenY);
+                    ctx.rotate(rotation);
+                    
+                    // DROP SHADOW (az a szaggatott vonal hatás alul)
+                    ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+                    ctx.shadowBlur = 20;
+                    ctx.shadowOffsetX = 5;
+                    ctx.shadowOffsetY = 10;
+                    
+                    // Kép rajzolása középre igazítva
+                    ctx.drawImage(
+                        jewelryImage, 
+                        -drawWidth / 2, 
+                        -drawHeight / 2, 
+                        drawWidth, 
+                        drawHeight
+                    );
+                    
+                    ctx.restore();
+                }
+                
+                // Debug: landmark pontok (opcionális, ki is kapcsolhatod)
+                /*
+                ctx.fillStyle = 'red';
+                for (let landmark of landmarks) {
+                    const x = landmark.x * canvas.width;
+                    const y = landmark.y * canvas.height;
+                    ctx.beginPath();
+                    ctx.arc(x, y, 5, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+                */
+            }
+            
+            ctx.restore();
+        }
+
+        // MediaPipe inicializálás
+        hands = new Hands({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        }});
+        
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+        
+        hands.onResults(onResults);
+        
+        // Kamera indítása
+        camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: 1280,
+            height: 720
+        });
+        
+        camera.start();
+
+    </script>
+</body>
+</html>
