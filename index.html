@@ -8,8 +8,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>2D AR Ékszer VTO</title>
-    <!-- MediaPipe -->
+    <title>2D Ékszer AR - Pro</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <style>
@@ -23,486 +22,471 @@
         body {
             overflow: hidden;
             background: #000;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             touch-action: none;
         }
         
-        /* Kamera teljes képernyőn */
-        #input_video {
+        #video-container {
             position: fixed;
             top: 0;
             left: 0;
             width: 100vw;
             height: 100vh;
-            object-fit: cover;
-            transform: scaleX(-1); /* Tükörkép */
+            background: #000;
             z-index: 1;
         }
         
-        /* Ékszer konténer - 3D perspektíva itt */
-        #jewelry-container {
+        #input_video {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* Tükörkép alapból */
+        }
+        
+        #ar-layer {
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            pointer-events: none;
             z-index: 10;
-            perspective: 1000px; /* 3D perspektíva */
-            perspective-origin: center center;
-        }
-        
-        /* Maga az ékszer kép */
-        #jewelry-image {
-            position: absolute;
-            display: none; /* Kezdetben rejtve */
-            transform-origin: center center;
-            will-change: transform, opacity;
-            transition: opacity 0.2s ease-out;
-            filter: drop-shadow(0 10px 20px rgba(0,0,0,0.4)) 
-                    drop-shadow(0 6px 6px rgba(0,0,0,0.3));
-            max-width: none; /* Fontos: ne szabályozza a CSS a méretet */
             pointer-events: none;
+            perspective: 1000px;
+            overflow: hidden;
         }
         
-        /* Szaggatott vonal (occlusion) */
-        #occlusion-indicator {
+        #jewelry-wrapper {
             position: absolute;
+            top: 0;
+            left: 0;
+            transform-origin: center center;
+            will-change: transform;
+            display: none;
+            filter: drop-shadow(0 8px 16px rgba(0,0,0,0.4)) 
+                    drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+            transition: opacity 0.15s ease-out;
+        }
+        
+        #jewelry-img {
+            display: block;
+            max-width: none;
+            max-height: none;
+        }
+        
+        #dashed-line {
+            position: absolute;
+            border: 2px dashed rgba(255, 255, 255, 0.8);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
             display: none;
             pointer-events: none;
-            z-index: 11;
-            opacity: 0;
-            transition: opacity 0.2s ease-out;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            background: rgba(255,255,255,0.1);
         }
         
-        #occlusion-indicator svg {
-            overflow: visible;
-        }
-        
-        #occlusion-indicator ellipse {
-            fill: none;
-            stroke: rgba(255, 255, 255, 0.8);
-            stroke-width: 2;
-            stroke-dasharray: 8, 4;
-            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
-        }
-        
-        /* UI Panel */
-        #ui-panel {
+        #ui-layer {
             position: fixed;
-            bottom: 20px;
+            z-index: 100;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        
+        .controls {
+            position: absolute;
+            bottom: 30px;
             left: 50%;
             transform: translateX(-50%);
-            z-index: 100;
-            background: rgba(0, 0, 0, 0.7);
-            backdrop-filter: blur(10px);
-            padding: 15px 20px;
-            border-radius: 30px;
-            border: 1px solid rgba(255,255,255,0.1);
             display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 10px;
-            min-width: 280px;
+            gap: 15px;
+            pointer-events: auto;
+            background: rgba(0,0,0,0.6);
+            padding: 15px;
+            border-radius: 30px;
+            backdrop-filter: blur(10px);
         }
         
-        #ui-panel label {
-            color: white;
+        button {
+            background: rgba(255,255,255,0.9);
+            border: none;
+            padding: 12px 24px;
+            border-radius: 20px;
             font-size: 14px;
-            font-weight: 500;
-            text-align: center;
+            font-weight: 600;
+            cursor: pointer;
+            color: #000;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        
+        button:active {
+            transform: scale(0.95);
+            background: rgba(255,255,255,0.7);
         }
         
         #file-input {
             display: none;
         }
         
-        .btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        .instructions {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
             color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 25px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-            width: 100%;
             text-align: center;
+            font-size: 18px;
+            opacity: 0.8;
+            pointer-events: none;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+            width: 80%;
         }
         
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
-        }
-        
-        .btn:active {
-            transform: translateY(0);
-        }
-        
-        #status-text {
-            color: rgba(255,255,255,0.7);
-            font-size: 12px;
-            margin-top: 5px;
-            text-align: center;
-        }
-        
-        /* Loading */
-        #loading {
+        .loading {
             position: fixed;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
             color: white;
-            z-index: 1000;
             font-size: 16px;
-            background: rgba(0,0,0,0.8);
-            padding: 20px 40px;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .spinner {
-            width: 20px;
-            height: 20px;
-            border: 2px solid rgba(255,255,255,0.3);
-            border-top-color: white;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-        
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        
-        /* Debug info (opcionális, fejlesztéshez) */
-        #debug-info {
-            position: fixed;
-            top: 10px;
-            left: 10px;
-            color: rgba(255,255,255,0.5);
-            font-size: 10px;
             z-index: 1000;
-            font-family: monospace;
-            pointer-events: none;
-            display: none; /* Bekapcsolható ha kell */
+            display: none;
+        }
+
+        .camera-toggle {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 101;
+            pointer-events: auto;
+        }
+        
+        .mirror-toggle {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 101;
+            pointer-events: auto;
         }
     </style>
 </head>
 <body>
 
-    <!-- Kamera input -->
-    <video id="input_video" playsinline></video>
-    
-    <!-- 3D Ékszer konténer -->
-    <div id="jewelry-container">
-        <img id="jewelry-image" src="" alt="Jewelry">
+    <div class="loading" id="loading">Kamera inicializálása...</div>
+
+    <div id="video-container">
+        <video id="input_video" playsinline></video>
     </div>
-    
-    <!-- Szaggatott vonal indikátor -->
-    <div id="occlusion-indicator">
-        <svg width="200" height="100" viewBox="0 0 200 100">
-            <ellipse cx="100" cy="50" rx="90" ry="20" />
-        </svg>
+
+    <div id="ar-layer">
+        <div id="dashed-line"></div>
+        <div id="jewelry-wrapper">
+            <img id="jewelry-img" src="" alt="jewelry">
+        </div>
     </div>
-    
-    <!-- Loading screen -->
-    <div id="loading">
-        <div class="spinner"></div>
-        <span>Kamera inicializálása...</span>
+
+    <div class="instructions" id="instructions">
+        Tartsd a kezed a kamerába<br>
+        <small>Az ékszer automatikusan megjelenik</small>
     </div>
-    
-    <!-- Debug info -->
-    <div id="debug-info"></div>
-    
-    <!-- UI Panel -->
-    <div id="ui-panel">
-        <label>📿 Tölts fel egy ékszer képet (PNG)</label>
-        <input type="file" id="file-input" accept="image/png,image/jpeg">
-        <button class="btn" onclick="document.getElementById('file-input').click()">
-            Kép kiválasztása
-        </button>
-        <div id="status-text">Várakozás a kézre...</div>
+
+    <div id="ui-layer">
+        <button class="mirror-toggle" onclick="toggleMirror()">🔄 Tükör</button>
+        <button class="camera-toggle" onclick="toggleCamera()">📷 Kamera váltás</button>
+        
+        <div class="controls">
+            <button onclick="document.getElementById('file-input').click()">📿 Ékszer feltöltése</button>
+            <button onclick="resetJewelry()">❌ Törlés</button>
+        </div>
     </div>
+
+    <input type="file" id="file-input" accept="image/png,image/jpeg,image/webp" onchange="handleFileSelect(event)">
 
     <script>
         // Konfiguráció
         const CONFIG = {
-            smoothFactor: 0.15,        // Lerp faktor (0.1 = lassú, 0.3 = gyors)
-            minDetectionConfidence: 0.7,
-            minTrackingConfidence: 0.7,
-            maxRotationX: 25,          // Max döntés előre/hátra (fok)
-            maxRotationY: 15,          // Max döntés oldalra
-            scaleFactor: 2.5,          // Alap skálázás
-            occlusionThreshold: 0.6,   // Frontalitás küszöb (0-1)
-            jewelryYOffset: -0.05      // Függőleges eltolás a csuklóhoz képest (%)
+            baseJewelryWidth: 200, // Alap ékszer szélesség pixelben
+            referenceWristWidth: 60, // Referencia csukló szélesség (pixelben képernyőn)
+            smoothing: 0.15, // Simítás faktor (0-1)
+            visibilityThreshold: 0.6, // Szög küszöb (0-1 között, 1=frontális)
+            minScale: 0.3, // Minimális méret
+            maxScale: 3.0 // Maximális méret (ne takarja ki a képernyőt)
         };
 
         // State
-        let state = {
-            targetX: window.innerWidth / 2,
-            targetY: window.innerHeight / 2,
-            targetRotationZ: 0,
-            targetRotationX: 0,
-            targetRotationY: 0,
-            targetScale: 1,
-            currentX: window.innerWidth / 2,
-            currentY: window.innerHeight / 2,
-            currentRotationZ: 0,
-            currentRotationX: 0,
-            currentRotationY: 0,
-            currentScale: 1,
+        let currentCamera = 'environment'; // 'environment' = hátlapi, 'user' = előlapi
+        let isMirrored = true;
+        let jewelryImage = null;
+        let isVideoReady = false;
+        
+        // Pozíciók simításhoz
+        let currentState = {
+            x: 0, y: 0,
+            rotation: 0,
+            scale: 1,
             visibility: 0,
-            hasImage: false,
-            isFrontal: true
+            wristWidth: 50
+        };
+
+        let targetState = {
+            x: 0, y: 0,
+            rotation: 0,
+            scale: 1,
+            visibility: 0,
+            wristWidth: 50
         };
 
         // DOM elemek
         const videoElement = document.getElementById('input_video');
-        const jewelryImage = document.getElementById('jewelry-image');
-        const jewelryContainer = document.getElementById('jewelry-container');
-        const occlusionIndicator = document.getElementById('occlusion-indicator');
-        const fileInput = document.getElementById('file-input');
-        const statusText = document.getElementById('status-text');
-        const loadingScreen = document.getElementById('loading');
-        const debugInfo = document.getElementById('debug-info');
+        const jewelryWrapper = document.getElementById('jewelry-wrapper');
+        const jewelryImg = document.getElementById('jewelry-img');
+        const dashedLine = document.getElementById('dashed-line');
+        const instructions = document.getElementById('instructions');
+        const loading = document.getElementById('loading');
 
-        // Kép feltöltés kezelése
-        fileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    jewelryImage.src = event.target.result;
-                    jewelryImage.onload = () => {
-                        state.hasImage = true;
-                        jewelryImage.style.display = 'block';
-                        statusText.textContent = 'Ékszer betöltve. Mozgasd a kezed!';
-                    };
-                };
-                reader.readAsDataURL(file);
-            }
-        });
-
-        // Lerp függvény (simítás)
-        function lerp(start, end, factor) {
-            return start + (end - start) * factor;
-        }
-
-        // Vektor műveletek
-        function getDistance(p1, p2) {
-            return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
-        }
-
-        function getAngle(p1, p2) {
-            return Math.atan2(p2.y - p1.y, p2.x - p1.x);
-        }
-
-        // Frontalitás számítás (mennyire néz szemből a kéz)
-        // Ha a kéz szemből néz, a szélessége nagyobb, ha oldalra fordul, keskenyebb
-        function calculateFrontality(landmarks) {
-            const wrist = landmarks[0];
-            const thumbBase = landmarks[2];
-            const pinkyBase = landmarks[17];
-            
-            // Kéz szélesség (hüvelykujj alap - kisujj alap)
-            const handWidth = getDistance(thumbBase, pinkyBase);
-            
-            // Kéz hossza (csukló - középső ujj vége)
-            const handLength = getDistance(wrist, landmarks[12]);
-            
-            // Arány: szélesség / hossz
-            // Szemből nézve ez nagyobb (0.8-1.0), oldalról nézve kisebb (0.3-0.5)
-            const ratio = handWidth / handLength;
-            
-            // Normalizálás 0-1 közé (empirikus értékek)
-            const frontal = Math.min(Math.max((ratio - 0.4) / 0.4, 0), 1);
-            
-            return frontal;
-        }
-
-        // MediaPipe eredmény feldolgozása
-        function onResults(results) {
-            loadingScreen.style.display = 'none';
-            
-            if (!state.hasImage || !results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
-                // Nincs kép vagy nincs kéz - fade out
-                state.visibility = 0;
-                updateJewelry();
-                statusText.textContent = 'Várakozás a kézre...';
-                return;
-            }
-
-            const landmarks = results.multiHandLandmarks[0];
-            
-            // Landmarkok
-            const wrist = landmarks[0];
-            const middleFingerBase = landmarks[9];
-            const middleFingerTip = landmarks[12];
-            const thumbBase = landmarks[2];
-            const pinkyBase = landmarks[17];
-            
-            // Csukló középpont (kissé felfelé tolva, hogy a karkötő ne a csonton legyen)
-            const centerX = (wrist.x + middleFingerBase.x) / 2;
-            const centerY = (wrist.y + middleFingerBase.y) / 2 + CONFIG.jewelryYOffset;
-            
-            // Képernyő koordinátákra konvertálás (tükrözve, mert a video tükrözött)
-            const screenX = (1 - centerX) * window.innerWidth; // Tükörkép kompenzáció
-            const screenY = centerY * window.innerHeight;
-            
-            // Forgatás Z tengely körül (kéz elfordulása)
-            const handAngle = getAngle(wrist, middleFingerBase);
-            const rotationZ = handAngle + Math.PI / 2; // +90 fok, hogy vízszintes legyen
-            
-            // Skálázás (távolság becslés a kéz méretéből)
-            const handSize = getDistance(wrist, middleFingerBase);
-            const baseSize = 0.15; // Normál kézméret arány
-            const scale = (handSize / baseSize) * CONFIG.scaleFactor;
-            
-            // Frontalitás és X/Y rotáció (3D hatás)
-            const frontality = calculateFrontality(landmarks);
-            
-            // Döntés X tengely körül (hajlítás) - a kéz "billenéséből" számolva
-            // Ha a kézfej felfelé néz vs. lefelé
-            const handTilt = (middleFingerTip.y - wrist.y) / handSize;
-            const rotationX = Math.max(-CONFIG.maxRotationX, 
-                             Math.min(CONFIG.maxRotationX, handTilt * 20));
-            
-            // Döntés Y tengely körül (oldalra) - a kéz szélességéből becslés
-            const handLean = (thumbBase.x - pinkyBase.x) / handSize;
-            const rotationY = Math.max(-CONFIG.maxRotationY,
-                             Math.min(CONFIG.maxRotationY, handLean * 15));
-            
-            // Cél értékek beállítása
-            state.targetX = screenX;
-            state.targetY = screenY;
-            state.targetRotationZ = rotationZ * (180 / Math.PI); // Radian to degree
-            state.targetRotationX = rotationX;
-            state.targetRotationY = rotationY;
-            state.targetScale = scale;
-            state.isFrontal = frontality > CONFIG.occlusionThreshold;
-            
-            // Ha frontális, akkor látható, ha nem, akkor occlusion
-            if (state.isFrontal) {
-                state.visibility = 1;
-                statusText.textContent = 'Ékszer aktív';
-            } else {
-                state.visibility = 0;
-                statusText.textContent = 'Fordítsd szembe a kezed';
-            }
-            
-            // Debug info
-            debugInfo.innerHTML = `
-                Frontality: ${frontality.toFixed(2)}<br>
-                Scale: ${scale.toFixed(2)}<br>
-                RotX: ${rotationX.toFixed(1)}°
-            `;
-        }
-
-        // Ékszer megjelenítés frissítése (animációs loop)
-        function updateJewelry() {
-            // Simítás (Lerp)
-            state.currentX = lerp(state.currentX, state.targetX, CONFIG.smoothFactor);
-            state.currentY = lerp(state.currentY, state.targetY, CONFIG.smoothFactor);
-            state.currentRotationZ = lerp(state.currentRotationZ, state.targetRotationZ, CONFIG.smoothFactor);
-            state.currentRotationX = lerp(state.currentRotationX, state.targetRotationX, CONFIG.smoothFactor);
-            state.currentRotationY = lerp(state.currentRotationY, state.targetRotationY, CONFIG.smoothFactor);
-            state.currentScale = lerp(state.currentScale, state.targetScale, CONFIG.smoothFactor);
-            
-            // Láthatóság kezelése
-            if (state.visibility > 0.5) {
-                // Ékszer látható
-                jewelryImage.style.opacity = '1';
-                occlusionIndicator.style.opacity = '0';
-                
-                // CSS 3D Transzformáció
-                // translate3d a pozícióhoz, rotateX/Y/Z a 3D orientációhoz, scale a méretarányhoz
-                const transform = `
-                    translate3d(${state.currentX}px, ${state.currentY}px, 0)
-                    translate(-50%, -50%)
-                    rotateZ(${state.currentRotationZ}deg)
-                    rotateX(${state.currentRotationX}deg)
-                    rotateY(${state.currentRotationY}deg)
-                    scale(${state.currentScale})
-                `;
-                
-                jewelryImage.style.transform = transform;
-                jewelryImage.style.left = '0';
-                jewelryImage.style.top = '0';
-                
-            } else {
-                // Ékszer eltűnt, szaggatott vonal megjelenítése
-                jewelryImage.style.opacity = '0';
-                
-                // Szaggatott vonal pozicionálása
-                if (state.hasImage) {
-                    occlusionIndicator.style.display = 'block';
-                    occlusionIndicator.style.left = state.currentX + 'px';
-                    occlusionIndicator.style.top = state.currentY + 'px';
-                    occlusionIndicator.style.transform = `translate(-50%, -50%) rotate(${state.currentRotationZ}deg) scale(${state.currentScale})`;
-                    occlusionIndicator.style.opacity = '0.8';
-                }
-            }
-            
-            requestAnimationFrame(updateJewelry);
-        }
-
-        // MediaPipe inicializálás
+        // MediaPipe
         const hands = new Hands({locateFile: (file) => {
             return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
         }});
 
         hands.setOptions({
             maxNumHands: 1,
-            modelComplexity: 1, // 0 = gyorsabb, 1 = pontosabb
-            minDetectionConfidence: CONFIG.minDetectionConfidence,
-            minTrackingConfidence: CONFIG.minTrackingConfidence
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
         });
 
         hands.onResults(onResults);
 
         // Kamera inicializálás
-        const camera = new Camera(videoElement, {
-            onFrame: async () => {
-                await hands.send({image: videoElement});
-            },
-            width: 1280,
-            height: 720
-        });
+        let camera = null;
+        
+        function initCamera() {
+            loading.style.display = 'block';
+            
+            if (camera) {
+                camera.stop();
+            }
+
+            camera = new Camera(videoElement, {
+                onFrame: async () => {
+                    await hands.send({image: videoElement});
+                },
+                width: 1280,
+                height: 720,
+                facingMode: currentCamera
+            });
+            
+            camera.start()
+                .then(() => {
+                    loading.style.display = 'none';
+                    isVideoReady = true;
+                    // Beállítjuk a tükrözést CSS-ben
+                    updateMirror();
+                })
+                .catch(err => {
+                    console.error('Kamera hiba:', err);
+                    loading.textContent = 'Kamera hozzáférés megtagadva';
+                });
+        }
+
+        // Tükör és kamera váltás
+        function toggleMirror() {
+            isMirrored = !isMirrored;
+            updateMirror();
+        }
+
+        function toggleCamera() {
+            currentCamera = currentCamera === 'environment' ? 'user' : 'environment';
+            initCamera();
+        }
+
+        function updateMirror() {
+            if (isMirrored) {
+                videoElement.style.transform = 'scaleX(-1)';
+            } else {
+                videoElement.style.transform = 'scaleX(1)';
+            }
+        }
+
+        // Fájl feltöltés
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    jewelryImg.src = e.target.result;
+                    jewelryImg.onload = () => {
+                        jewelryImage = true;
+                        instructions.style.display = 'none';
+                        jewelryWrapper.style.display = 'block';
+                        // Alap méret beállítása
+                        CONFIG.baseJewelryWidth = jewelryImg.naturalWidth * 0.3; // 30%-át használjuk alapnak
+                    };
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function resetJewelry() {
+            jewelryImage = null;
+            jewelryImg.src = '';
+            jewelryWrapper.style.display = 'none';
+            instructions.style.display = 'block';
+        }
+
+        // Matematikai segédfüggvények
+        function distance(p1, p2) {
+            return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+        }
+
+        function angle(p1, p2) {
+            return Math.atan2(p2.y - p1.y, p2.x - p1.x);
+        }
+
+        function lerp(start, end, factor) {
+            return start + (end - start) * factor;
+        }
+
+        // Fő feldolgozó függvény
+        function onResults(results) {
+            if (!jewelryImage || !isVideoReady) return;
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                
+                // Landmark indexek:
+                // 0: csukló (wrist)
+                // 5: mutatóujj alap (index finger MCP)
+                // 9: középső ujj alap (middle finger MCP)  
+                // 13: gyűrűsujj alap (ring finger MCP)
+                // 17: kisujj alap (pinky MCP)
+                
+                const wrist = landmarks[0];
+                const index = landmarks[5];
+                const middle = landmarks[9];
+                const pinky = landmarks[17];
+                
+                // CSUKLÓ SZÉLESSÉG becslése (tenyér szélessége a csuklónál)
+                // A mutatóujj és kisujj távolsága a tenyér szélességét adja, ami közelítőleg 2x a csukló szélessége
+                const palmWidth = distance(index, pinky);
+                const wristWidth = palmWidth * 0.6; // Csukló szélessége ~60% a tenyér szélességénél
+                
+                // POZÍCIÓ: A csukló és középső ujj között (ahol a karkötő ülne)
+                // Tükörözés kezelése: ha tükörkép, az x koordinátát invertálni kell
+                let wristX = (wrist.x + middle.x) / 2;
+                let wristY = (wrist.y + middle.y) / 2;
+                
+                if (isMirrored) {
+                    wristX = 1 - wristX;
+                }
+                
+                // Konvertálás pixel koordinátákra
+                const videoWidth = videoElement.videoWidth || window.innerWidth;
+                const videoHeight = videoElement.videoHeight || window.innerHeight;
+                
+                const pixelX = wristX * window.innerWidth;
+                const pixelY = wristY * window.innerHeight;
+                
+                // FORGATÁS: A kéz hossztengelye (csukló -> középső ujj)
+                let handAngle = angle(wrist, middle);
+                if (isMirrored) {
+                    handAngle = -handAngle; // Tükörnél invertálni kell a szöget
+                }
+                // Függőleges igazítás (a kép függőleges legyen a kézhez képest)
+                const rotation = handAngle * (180 / Math.PI) + 90;
+                
+                // FRONTALITÁS számítása (mennyire néz szembe a kéz)
+                // Ha a tenyér szélessége nagy -> szemben van
+                // Ha a tenyér keskeny -> oldalra fordult
+                // A tenyér hossza vs szélessége aránya adja meg
+                const handLength = distance(wrist, middle);
+                const aspectRatio = palmWidth / handLength;
+                
+                // Frontalitás: 1 = tökéletesen szemben, 0 = teljesen oldalt
+                // Egy tenyér általában 0.8-1.0 arányú szemből, oldalról 0.3-0.4
+                let frontal = (aspectRatio - 0.4) / 0.6;
+                frontal = Math.max(0, Math.min(1, frontal)); // Clamp 0-1
+                
+                // MÉRETAZÁS (skálázás)
+                // A csukló szélességéhez igazítjuk az ékszer méretét
+                // Cél: Az ékszer szélessége megközelítőleg egyezzen a csukló szélességével (körülbelül)
+                // De mivel egy karkötő kép általában a teljes hosszát mutatja (körülbelül 3x a csukló szélessége),
+                // skálázzuk úgy, hogy az illeszkedjen
+                
+                const scale = Math.max(CONFIG.minScale, 
+                                     Math.min(CONFIG.maxScale, 
+                                              (wristWidth * window.innerWidth) / CONFIG.baseJewelryWidth));
+                
+                // Célpontok beállítása
+                targetState.x = pixelX;
+                targetState.y = pixelY;
+                targetState.rotation = rotation;
+                targetState.scale = scale;
+                targetState.visibility = frontal;
+                targetState.wristWidth = wristWidth * window.innerWidth; // Pixelben
+                
+            } else {
+                // Nincs kéz a képen
+                targetState.visibility = 0;
+            }
+        }
+
+        // Animációs loop (simítás)
+        function animate() {
+            // Simított értékek számítása
+            currentState.x = lerp(currentState.x, targetState.x, CONFIG.smoothing);
+            currentState.y = lerp(currentState.y, targetState.y, CONFIG.smoothing);
+            currentState.rotation = lerp(currentState.rotation, targetState.rotation, CONFIG.smoothing);
+            currentState.scale = lerp(currentState.scale, targetState.scale, CONFIG.smoothing);
+            currentState.visibility = lerp(currentState.visibility, targetState.visibility, CONFIG.smoothing);
+            currentState.wristWidth = lerp(currentState.wristWidth, targetState.wristWidth, CONFIG.smoothing);
+            
+            // Megjelenítés kezelése
+            if (currentState.visibility < 0.3) {
+                // Szaggatott vonal megjelenítése (ha van kéz, de oldalra fordult)
+                if (targetState.visibility > 0) {
+                    dashedLine.style.display = 'block';
+                    dashedLine.style.left = currentState.x + 'px';
+                    dashedLine.style.top = currentState.y + 'px';
+                    dashedLine.style.width = (currentState.wristWidth * 1.2) + 'px';
+                    dashedLine.style.height = (currentState.wristWidth * 1.2) + 'px';
+                    dashedLine.style.opacity = (0.3 - currentState.visibility) * 3; // Fokozatos megjelenés
+                } else {
+                    dashedLine.style.display = 'none';
+                }
+                
+                jewelryWrapper.style.opacity = '0';
+            } else {
+                // Ékszer megjelenítése
+                dashedLine.style.display = 'none';
+                jewelryWrapper.style.opacity = '1';
+                
+                // CSS 3D Transzformáció
+                // rotateX: Kicsit megdöntjük, hogy "ráül" a csuklóra (perspektíva)
+                const tiltX = (1 - currentState.visibility) * 20; // Max 20 fok döntés ha oldalra fordul
+                
+                const transform = `
+                    translate3d(${currentState.x}px, ${currentState.y}px, 0) 
+                    rotateZ(${currentState.rotation}deg) 
+                    rotateX(${tiltX}deg)
+                    scale(${currentState.scale})
+                `;
+                
+                jewelryWrapper.style.transform = transform;
+            }
+            
+            requestAnimationFrame(animate);
+        }
 
         // Indítás
-        camera.start()
-            .then(() => {
-                console.log('Kamera elindult');
-                loadingScreen.style.display = 'none';
-            })
-            .catch(err => {
-                console.error('Kamera hiba:', err);
-                loadingScreen.innerHTML = '<span>Kamera hiba! Engedélyezd a kamerát.</span>';
-            });
+        initCamera();
+        animate();
 
-        // Animációs loop indítása
-        updateJewelry();
-
-        // Window resize kezelés
-        window.addEventListener('resize', () => {
-            // Nem kell semmit tenni, a koordináták dinamikusan számítódnak
-        });
-
-        // Double tap a debug módhoz (fejlesztéshez)
-        let lastTap = 0;
-        document.addEventListener('touchend', (e) => {
-            const currentTime = new Date().getTime();
-            const tapLength = currentTime - lastTap;
-            if (tapLength < 500 && tapLength > 0) {
-                debugInfo.style.display = debugInfo.style.display === 'none' ? 'block' : 'none';
-                e.preventDefault();
-            }
-            lastTap = currentTime;
-        });
     </script>
 </body>
 </html>
+
