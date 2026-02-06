@@ -1,7 +1,4 @@
-<!-- 
-  CosmicAR - 2D Bracelet VTO
-  Perfect Corp style - A kör körbefogja a csuklót
--->
+<!-- CosmicAR - 2D Bracelet VTO -->
 <!DOCTYPE html>
 <html lang="hu">
 <head>
@@ -13,181 +10,53 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         
-        html, body {
-            width: 100%; height: 100%;
-            overflow: hidden;
-            background: #000;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        }
+        html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
 
-        /* Telefon mód */
-        #app-container {
-            width: 100%; height: 100%;
-            max-width: 480px;
-            margin: 0 auto;
-            position: relative;
-            background: #000;
-            overflow: hidden;
-        }
+        #app-container { width: 100%; height: 100%; max-width: 480px; margin: 0 auto; position: relative; background: #000; overflow: hidden; }
 
         @media (min-width: 481px) {
-            body {
-                background: #1a1a1a;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-            #app-container {
-                height: 90vh;
-                aspect-ratio: 9/16;
-                border-radius: 20px;
-                box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-            }
+            body { background: #1a1a1a; display: flex; align-items: center; justify-content: center; }
+            #app-container { height: 90vh; aspect-ratio: 9/16; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
         }
 
-        #video-layer {
-            position: absolute; top: 0; left: 0;
-            width: 100%; height: 100%;
-            z-index: 1;
-        }
-        
-        #input_video {
-            width: 100%; height: 100%;
-            object-fit: cover;
-            transform: scaleX(-1);
+        #video-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        #input_video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+
+        #ar-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; perspective: 1200px; transform-style: preserve-3d; }
+
+        #wrist-anchor { position: absolute; left: 50%; top: 50%; width: 0; height: 0; transform-style: preserve-3d; }
+
+        #jewelry-wrapper { position: absolute; left: 0; top: 0; transform-style: preserve-3d; opacity: 1; }
+
+        #jewelry-img { display: block; transform: translate(-50%, -50%); filter: drop-shadow(0 6px 12px rgba(0,0,0,0.3)); max-width: none; max-height: none; }
+
+        #dashed-arc { 
+            position: absolute; left: 0; top: 0; 
+            border-radius: 50%; border: 3px dashed rgba(255, 255, 255, 0.9); 
+            opacity: 0; pointer-events: none; transform-style: preserve-3d;
+            /* Csak a border látszik, nincs box-shadow! */
         }
 
-        #ar-layer {
-            position: absolute; top: 0; left: 0;
-            width: 100%; height: 100%;
-            z-index: 10;
-            pointer-events: none;
-            perspective: 1200px;
-            transform-style: preserve-3d;
+        @keyframes dash-spin {
+            from { transform: rotateX(-60deg) rotate(0deg); }
+            to { transform: rotateX(-60deg) rotate(360deg); }
         }
 
-        /* Csukló anchor - EZ a csukló közepén van */
-        #wrist-anchor {
-            position: absolute;
-            left: 50%; top: 50%;
-            width: 0; height: 0;
-            transform-style: preserve-3d;
-            will-change: transform;
-        }
-
-        /* KARKÖTŐ KÉP */
-        #jewelry-wrapper {
-            position: absolute;
-            left: 0; top: 0;
-            transform-style: preserve-3d;
-        }
-
-        #jewelry-img {
-            display: block;
-            transform: translate(-50%, -50%);
-            filter: drop-shadow(0 6px 12px rgba(0,0,0,0.3));
-            max-width: none; max-height: none;
-        }
-
-        /* DASHED ARC - KÖRBEFOGJA A CSUKLÓT */
-        #dashed-arc {
-            position: absolute;
-            left: 0; top: 0;
-            width: 220px; height: 220px;
-            margin-left: -110px; margin-top: -110px;
-            border-radius: 50%;
-            border: 4px dashed rgba(255, 255, 255, 0.9);
-            opacity: 0;
-            pointer-events: none;
-            /* Alapállapotban a kör "előttünk" van, de X tengely körül fordítva */
-            transform-style: preserve-3d;
-        }
-
-        /* Futó vonal animáció - a borderen nem működik, de a box-shadow igen */
-        @keyframes pulse-glow {
-            0%, 100% { box-shadow: 0 0 20px rgba(255,255,255,0.3); }
-            50% { box-shadow: 0 0 40px rgba(255,255,255,0.6); }
-        }
-
-        #dashed-arc.visible {
-            animation: pulse-glow 2s ease-in-out infinite;
-        }
-
-        #ui-layer {
-            position: absolute; top: 0; left: 0;
-            width: 100%; height: 100%;
-            z-index: 100;
-            pointer-events: none;
-        }
-
-        #instruction-text {
-            position: absolute; top: 15%; left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0,0,0,0.6);
-            color: white; padding: 12px 20px; border-radius: 20px;
-            font-size: 14px; text-align: center;
-            backdrop-filter: blur(8px);
-            border: 1px solid rgba(255,255,255,0.15);
-            white-space: nowrap;
-        }
-
-        .btn {
-            pointer-events: auto;
-            background: rgba(0,0,0,0.7);
-            backdrop-filter: blur(10px);
-            color: white; border: 1px solid rgba(255,255,255,0.2);
-            border-radius: 20px; font-weight: 600; cursor: pointer;
-            transition: transform 0.1s;
-        }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 100; pointer-events: none; }
+        #instruction-text { position: absolute; top: 15%; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.6); color: white; padding: 12px 20px; border-radius: 20px; font-size: 14px; text-align: center; backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.15); white-space: nowrap; }
+        .btn { pointer-events: auto; background: rgba(0,0,0,0.7); backdrop-filter: blur(10px); color: white; border: 1px solid rgba(255,255,255,0.2); border-radius: 20px; font-weight: 600; cursor: pointer; transition: transform 0.1s; }
         .btn:active { transform: scale(0.95); }
-
-        .top-controls {
-            position: absolute; top: 12px; left: 0; width: 100%;
-            display: flex; justify-content: space-between; padding: 0 16px;
-        }
+        .top-controls { position: absolute; top: 12px; left: 0; width: 100%; display: flex; justify-content: space-between; padding: 0 16px; }
         .icon-btn { padding: 8px 14px; font-size: 12px; }
-
-        .bottom-controls {
-            position: absolute; bottom: 24px; left: 50%;
-            transform: translateX(-50%);
-            width: 90%; display: flex; flex-direction: column; gap: 10px;
-            pointer-events: auto;
-        }
-
-        .mode-selector {
-            display: flex; gap: 8px;
-            background: rgba(0,0,0,0.7); padding: 6px; border-radius: 24px;
-            backdrop-filter: blur(10px);
-        }
-        .mode-btn {
-            flex: 1; background: transparent; color: rgba(255,255,255,0.7);
-            border: none; padding: 12px; border-radius: 18px;
-            font-size: 14px; cursor: pointer; transition: all 0.25s;
-            font-weight: 600;
-        }
+        .bottom-controls { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); width: 90%; display: flex; flex-direction: column; gap: 10px; pointer-events: auto; }
+        .mode-selector { display: flex; gap: 8px; background: rgba(0,0,0,0.7); padding: 6px; border-radius: 24px; backdrop-filter: blur(10px); }
+        .mode-btn { flex: 1; background: transparent; color: rgba(255,255,255,0.7); border: none; padding: 12px; border-radius: 18px; font-size: 14px; cursor: pointer; transition: all 0.25s; font-weight: 600; }
         .mode-btn.active { background: rgba(255,255,255,0.95); color: #000; }
-
-        .finger-controls {
-            display: none; gap: 12px;
-            background: rgba(0,0,0,0.7); padding: 8px 16px;
-            border-radius: 24px; align-items: center; justify-content: center;
-            backdrop-filter: blur(10px);
-        }
+        .finger-controls { display: none; gap: 12px; background: rgba(0,0,0,0.7); padding: 8px 16px; border-radius: 24px; align-items: center; justify-content: center; backdrop-filter: blur(10px); }
         .finger-controls.visible { display: flex; }
-        .finger-btn {
-            background: rgba(255,255,255,0.2); color: white; border: none;
-            width: 36px; height: 36px; border-radius: 50%;
-            font-size: 16px; cursor: pointer;
-            display: flex; align-items: center; justify-content: center;
-        }
+        .finger-btn { background: rgba(255,255,255,0.2); color: white; border: none; width: 36px; height: 36px; border-radius: 50%; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
         .finger-label { color: white; font-size: 14px; font-weight: 600; min-width: 100px; text-align: center; }
-
-        .loading {
-            position: fixed; top: 50%; left: 50%;
-            transform: translate(-50%, -50%); color: white; z-index: 1000;
-            background: rgba(0,0,0,0.85); padding: 24px 32px; border-radius: 16px;
-            font-size: 14px; text-align: center;
-        }
+        .loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; z-index: 1000; background: rgba(0,0,0,0.85); padding: 24px 32px; border-radius: 16px; font-size: 14px; text-align: center; }
     </style>
 </head>
 <body>
@@ -201,11 +70,9 @@
 
         <div id="ar-layer">
             <div id="wrist-anchor">
-                <!-- Karkötő -->
                 <div id="jewelry-wrapper">
                     <img id="jewelry-img" src="" alt="jewelry" style="display:none;">
                 </div>
-                <!-- Dashed Arc - KÖRBEFOGJA A CSUKLÓT -->
                 <div id="dashed-arc"></div>
             </div>
         </div>
@@ -234,45 +101,33 @@
     </div>
 
     <script>
-        // --- KONFIGURÁCIÓ ---
         const CONFIG = {
             assetsPath: './Assets/',
             smoothing: 0.12,
-            transitionStart: 25,    // Korábban kezdődik az átmenet
-            transitionEnd: 50,      // 50 foknál már csak az arc látszik
-            baseScaleBracelet: 2.0,
+            transitionStart: 25,
+            transitionEnd: 50,
+            baseScaleBracelet: 1.4,  // Kisebb alapméret
             baseScaleRing: 1.0,
-            // A kör orientációja
-            circleTiltX: -70,       // Ennyire "dől" előre a kör (körbefogja a csuklót)
-            circleTiltZ: 0          // Z irányú elfordulás
+            circleTiltX: -60         // Kisebb dőlés
         };
 
-        // --- ÁLLAPOT ---
         let currentMode = 'bracelet';
         let currentFingerIndex = 2;
         const fingerNames = ['Mutatóujj', 'Középsőujj', 'Gyűrűsujj', 'Kisujj'];
-        const fingerLandmarks = [
-            { tip: 8, mcp: 5 }, { tip: 12, mcp: 9 },
-            { tip: 16, mcp: 13 }, { tip: 20, mcp: 17 }
-        ];
+        const fingerLandmarks = [{ tip: 8, mcp: 5 }, { tip: 12, mcp: 9 }, { tip: 16, mcp: 13 }, { tip: 20, mcp: 17 }];
         
         let currentCamera = 'environment';
         let isMirrored = true;
         let isVideoReady = false;
         
-        let state = {
-            x: 0.5, y: 0.5,
-            rotZ: 0,      // Kéz dőlése
-            rotY: 0,      // Oldalra fordulás
-            rotX: 0,      // Előre/hátra dőlés
-            scale: 1,
-            arcOpacity: 0,
-            jewelryOpacity: 1
-        };
-        
+        // State és target inicializálása
+        let state = { x: 0.5, y: 0.5, rotZ: 0, rotY: 0, scale: 1, arcOpacity: 0, jewelryOpacity: 1, wristWidth: 100 };
         let target = { ...state };
+        
+        // Előző szög a 360-as ugrás elkerülésére
+        let prevRotZ = 0;
+        let rotZOffset = 0;
 
-        // --- DOM ---
         const videoElement = document.getElementById('input_video');
         const wristAnchor = document.getElementById('wrist-anchor');
         const jewelryWrapper = document.getElementById('jewelry-wrapper');
@@ -285,35 +140,25 @@
         const btnRing = document.getElementById('btn-ring');
         const appContainer = document.getElementById('app-container');
 
-        // --- ASSET BETÖLTÉS ---
         function loadAsset(type) {
             const img = new Image();
-            const src = type === 'bracelet' 
-                ? CONFIG.assetsPath + 'bracelet.png' 
-                : CONFIG.assetsPath + 'ring.png';
+            const src = type === 'bracelet' ? CONFIG.assetsPath + 'bracelet.png' : CONFIG.assetsPath + 'ring.png';
             
             img.onload = () => {
                 jewelryImg.src = src;
                 jewelryImg.style.display = 'block';
                 const aspect = img.naturalHeight / img.naturalWidth;
-                const baseW = type === 'bracelet' ? 240 : 80;
+                const baseW = type === 'bracelet' ? 220 : 80;
                 jewelryImg.style.width = baseW + 'px';
                 jewelryImg.style.height = (baseW * aspect) + 'px';
+                console.log('Asset betöltve:', src);
             };
-            img.onerror = () => console.error("Asset nem található:", src);
+            img.onerror = () => console.error('Asset hiba:', src);
             img.src = src;
         }
 
-        // --- MEDIPIPE ---
-        const hands = new Hands({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-        });
-
-        hands.setOptions({
-            maxNumHands: 1, modelComplexity: 1,
-            minDetectionConfidence: 0.5, minTrackingConfidence: 0.5
-        });
-
+        const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
         hands.onResults(onResults);
 
         function initCamera() {
@@ -357,16 +202,19 @@
 
         function nextFinger() { currentFingerIndex = (currentFingerIndex + 1) % 4; updateFingerLabel(); }
         function prevFinger() { currentFingerIndex = (currentFingerIndex - 1 + 4) % 4; updateFingerLabel(); }
-        function updateFingerLabel() { 
-            fingerLabel.textContent = fingerNames[currentFingerIndex];
-            instructions.textContent = "Nyújtsd ki a " + fingerNames[currentFingerIndex].toLowerCase() + "-t";
-        }
+        function updateFingerLabel() { fingerLabel.textContent = fingerNames[currentFingerIndex]; instructions.textContent = "Nyújtsd ki a " + fingerNames[currentFingerIndex].toLowerCase() + "-t"; }
 
         function lerp(s, e, f) { return s + (e - s) * f; }
         function clamp(v, min, max) { return Math.min(Math.max(v, min), max); }
         function dist(p1, p2) { return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2)); }
 
-        // --- FŐ FELDOLGOZÓ ---
+        // Szög normalizálás -180 és 180 közé
+        function normalizeAngle(angle) {
+            while (angle > 180) angle -= 360;
+            while (angle < -180) angle += 360;
+            return angle;
+        }
+
         function onResults(results) {
             if (!isVideoReady) return;
             
@@ -378,30 +226,40 @@
 
             const lm = results.multiHandLandmarks[0];
             const screenW = appContainer.offsetWidth;
-            const screenH = appContainer.offsetHeight;
 
-            let centerX, centerY, rotZ, rotY, scale;
+            let centerX, centerY, rotZ, rotY, wristW;
 
             if (currentMode === 'bracelet') {
-                // --- KARKÖTŐ ---
-                // A csukló pont (0) és a középső ujj alapja (9)
                 const wrist = lm[0];
                 const midBase = lm[9];
                 const indexBase = lm[5];
                 const pinkyBase = lm[17];
 
-                // POZÍCIÓ: Csak a csukló (0) pont, de egy kicsit lejjebb tolva
-                // hogy tényleg a csukló "körül" legyen, ne a kézfejen
+                // POZÍCIÓ: Csukló pont
                 centerX = wrist.x;
-                centerY = wrist.y + 0.05; // Lejjebb tolás az alkar felé
+                centerY = wrist.y + 0.02; // Kicsit lejjebb
 
-                // Z FORGATÁS: A kéz dőlése
+                // CSUKLÓ SZÉLESSÉG - ez adja a kör méretét!
+                wristW = dist(indexBase, pinkyBase) * screenW;
+
+                // Z FORGATÁS: Kéz dőlése
                 const dx = midBase.x - wrist.x;
                 const dy = midBase.y - wrist.y;
-                rotZ = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
-                if (isMirrored) rotZ = -rotZ;
+                let rawAngle = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
+                
+                // 360-as ugrás elkerülése
+                rawAngle = normalizeAngle(rawAngle);
+                if (isMirrored) rawAngle = -rawAngle;
+                
+                // Ha nagy az ugrás az előzőhöz képest, adjunk hozzá/vonjunk ki 360-at
+                let diff = rawAngle - (prevRotZ - rotZOffset);
+                if (diff > 180) rotZOffset -= 360;
+                else if (diff < -180) rotZOffset += 360;
+                
+                rotZ = rawAngle + rotZOffset;
+                prevRotZ = rotZ;
 
-                // Y FORGATÁS: Oldalra fordulás (yaw)
+                // Y FORGATÁS: Oldalra fordulás
                 const handW = dist(indexBase, pinkyBase);
                 const handH = dist(wrist, midBase);
                 const aspect = handW / (handH || 0.001);
@@ -411,12 +269,7 @@
                 if (isMirrored) rotY = -rotY;
                 if (indexBase.x > pinkyBase.x) rotY = -rotY;
 
-                // SKÁLA
-                const handSizePx = handH * screenH;
-                scale = (handSizePx / 140) * CONFIG.baseScaleBracelet;
-
             } else {
-                // --- GYŰRŰ ---
                 const f = fingerLandmarks[currentFingerIndex];
                 const tip = lm[f.tip]; const mcp = lm[f.mcp];
                 
@@ -425,12 +278,19 @@
                 
                 const dx = tip.x - mcp.x;
                 const dy = tip.y - mcp.y;
-                rotZ = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
-                if (isMirrored) rotZ = -rotZ;
+                let rawAngle = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
+                rawAngle = normalizeAngle(rawAngle);
+                if (isMirrored) rawAngle = -rawAngle;
+                
+                let diff = rawAngle - (prevRotZ - rotZOffset);
+                if (diff > 180) rotZOffset -= 360;
+                else if (diff < -180) rotZOffset += 360;
+                
+                rotZ = rawAngle + rotZOffset;
+                prevRotZ = rotZ;
                 
                 rotY = 0;
-                const fingerLen = dist(mcp, tip) * screenH;
-                scale = (fingerLen / 100) * CONFIG.baseScaleRing;
+                wristW = 60; // Default gyűrű esetén
             }
 
             if (isMirrored) centerX = 1 - centerX;
@@ -439,7 +299,7 @@
             target.y = centerY;
             target.rotZ = rotZ;
             target.rotY = rotY;
-            target.scale = clamp(scale, 0.3, 3);
+            target.wristWidth = wristW;
 
             // ÁTTŰNÉSI LOGIKA
             const absYaw = Math.abs(rotY);
@@ -457,7 +317,6 @@
             }
         }
 
-        // --- RENDER ---
         function animate() {
             const screenW = appContainer.offsetWidth;
             const screenH = appContainer.offsetHeight;
@@ -467,53 +326,39 @@
             state.y = lerp(state.y, target.y, CONFIG.smoothing);
             state.rotZ = lerp(state.rotZ, target.rotZ, CONFIG.smoothing);
             state.rotY = lerp(state.rotY, target.rotY, CONFIG.smoothing);
-            state.scale = lerp(state.scale, target.scale, CONFIG.smoothing);
+            state.wristWidth = lerp(state.wristWidth, target.wristWidth, CONFIG.smoothing);
             state.arcOpacity = lerp(state.arcOpacity, target.arcOpacity, 0.08);
             state.jewelryOpacity = lerp(state.jewelryOpacity, target.jewelryOpacity, CONFIG.smoothing);
 
-            // Pixel pozíció
             const px = state.x * screenW;
             const py = state.y * screenH;
 
-            // Anchor mozgatása
             wristAnchor.style.left = px + 'px';
             wristAnchor.style.top = py + 'px';
 
             // KARKÖTŐ
-            // A karkötő is körbefogja a csuklót - rotateX-el dől előre
             jewelryWrapper.style.opacity = state.jewelryOpacity;
             jewelryWrapper.style.transform = `
                 rotateX(${CONFIG.circleTiltX}deg)
                 rotateZ(${state.rotZ}deg)
                 rotateY(${state.rotY * 0.3}deg)
-                scale(${state.scale})
-                translateZ(10px)
             `;
 
-            // DASHED ARC - KÖRBEFOGJA A CSUKLÓT
-            // A kör síkja X tengely körül van elfordítva, hogy "körbe" ölelje a csuklót
-            // és Y körül is fordul, hogy kövesse az oldalra fordulást
-            const arcSize = 200 * state.scale;
+            // DASHED ARC - A CSUKLÓ SZÉLESSÉGÉHEZ IGAZÍTVA
+            // A csukló szélességének 2.2-szerese (kicsit nagyobb, hogy körbeölelje)
+            const arcSize = state.wristWidth * 2.2;
             dashedArc.style.width = arcSize + 'px';
             dashedArc.style.height = arcSize + 'px';
             dashedArc.style.marginLeft = -(arcSize/2) + 'px';
             dashedArc.style.marginTop = -(arcSize/2) + 'px';
             dashedArc.style.opacity = state.arcOpacity;
             
-            // A LÉNYEG: A kör X tengely körül dől (-70deg), Y körül fordul oldalra,
-            // és Z körül is fordul a kéz dőlésével
+            // A kör forgatása - CSAK Y és Z, X fix dőlés
             dashedArc.style.transform = `
                 rotateX(${CONFIG.circleTiltX}deg)
                 rotateY(${state.rotY}deg)
                 rotateZ(${state.rotZ}deg)
-                translateZ(-20px)
             `;
-            
-            if (state.arcOpacity > 0.1) {
-                dashedArc.classList.add('visible');
-            } else {
-                dashedArc.classList.remove('visible');
-            }
 
             requestAnimationFrame(animate);
         }
