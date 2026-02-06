@@ -1,10 +1,11 @@
 <!-- 
-  CosmicAR - 2D Bracelet VTO (Fixed with Google Edge / World Landmarks Logic)
+  CosmicAR - 2D Bracelet VTO (Fixed Rotation & Depth - FULL VERSION)
   
-  VÁLTOZTATÁSOK AZ EREDETIHEZ KÉPESZT:
-  - A "onResults" matematikai része teljesen átírva.
-  - Mostantól "multiHandWorldLandmarks" (3D koordináták) alapján számolunk.
-  - Ez javítja a "túlre fordulásból való úszást" és a skálázást.
+  VÁLTOZTATÁSOK AZ EREDETIHEZ KÉPESZT (TOVÁBBFEJLESZTÉS):
+  - A "onResults" matematikai része átírva "Google Edge" / World Landmarks logikára.
+  - A forgatás iránya (Yaw) megfordítva a térbeli követés érdekében.
+  - A szaggatott vonal mélysége (Z) korrigálva, hogy a csukló körül álljon.
+  - Valós 3D méretarány (skálázás) bevezetve.
 -->
 <!DOCTYPE html>
 <html lang="hu">
@@ -117,8 +118,8 @@
             border: 10px dashed rgba(255, 255, 255, 0.8); /* Itt növeltük vastagabbra */
             pointer-events: none;
             opacity: 0; 
-            /* Kis hátra tolás Z-ben, hogy ne lógjon ki előre */
-            transform: translate(-50%, -50%) translateZ(-20px) rotateX(-75deg);
+            /* Kis hátra tolás Z-ben, hogy a csukló körül / mögött tűnjön */
+            transform: translate(-50%, -50%) translateZ(-60px) rotateX(-75deg);
         }
 
         @keyframes dash-spin {
@@ -538,7 +539,6 @@
                 const p = worldLm[17];
 
                 // 1. POZÍCIÓ (Screen coords - mert a képernyőhöz kell illeszteni)
-                // De most már a 3D adatok alapján számoltunk volna, de a screen coords elég stabil a pozícióhoz
                 centerX = (lm[0].x + lm[9].x) / 2;
                 centerY = (lm[0].y + lm[9].y) / 2;
 
@@ -587,7 +587,8 @@
                 
                 // A forgatás összevonása:
                 // XDiff adja a "tengelyt", ZDiff adja az irányt
-                yawDeg = Math.atan2(xDiff, Math.abs(zDiff)) * (180 / Math.PI);
+                // JAVÍTÁS: A negatív előjel fordítja a forgatás irányát, ahogy kérted
+                yawDeg = -Math.atan2(xDiff, Math.abs(zDiff)) * (180 / Math.PI);
                 
                 if (isMirrored) yawDeg = -yawDeg;
 
@@ -687,7 +688,7 @@
             
             dashedArc.style.transform = `
                 translate(-50%, -50%) 
-                translateZ(-20px)
+                translateZ(-60px)
                 rotateY(${state.rotationY}deg) 
                 rotateX(-75deg)
             `;
