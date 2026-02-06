@@ -40,7 +40,7 @@
             z-index: 10; pointer-events: none;
             /* A mélység kulcsa */
             perspective: 1500px;
-            overflow: hidden;
+            overflow: visible; /* A shadow ne vágódjon le */
         }
 
         /* Az ékszer horgonypontja (követi a kéz pozícióját) */
@@ -55,8 +55,10 @@
             position: absolute;
             transform-style: preserve-3d;
             backface-visibility: hidden; /* Ha hátrafordul, ne látszódjon */
-            /* Ez a nagy árnyék adja a "súlyt" */
-            filter: drop-shadow(0px 20px 30px rgba(0,0,0,0.7)); 
+            /* Perfect Corp szintű finom drop shadow */
+            filter: drop-shadow(0 8px 16px rgba(0,0,0,0.25));
+            /* Z-offset hogy érintse a bőrt, ne lebegjen */
+            transform: translateZ(-10px);
         }
 
         #jewelry-img {
@@ -68,16 +70,25 @@
         #dashed-arc {
             position: absolute;
             border-radius: 50%;
-            /* Szaggatott vonal stílus */
-            border: 4px dashed rgba(255, 255, 255, 0.9);
-            /* Ez a trükk: translateZ(-1) hátraküldi a kört a kéz mögött */
-            /* Mivel a kéz a videóban van (z-index 1), ez a DOM elem (z-index 10) 
-               de mivel transzparens és csak a vonal van, a bőr színe átragyog rajta.
-               A CSS perspective segít, hogy a hátsó ívnek hasson. */
-            transform: translate(-50%, -50%) translateZ(-50px); 
+            /* Szaggatott vonal stílus - vastagabb, látványosabb */
+            border: 3px dashed rgba(255, 255, 255, 0.85);
+            /* Hátraküldés a kéz mögé */
+            transform: translate(-50%, -50%) translateZ(-80px);
             pointer-events: none;
-            box-shadow: 0 0 20px rgba(0,0,0,0.5);
-            opacity: 0; /* Alapból rejtve, csak 45 fok után jelenik meg */
+            box-shadow: 0 0 30px rgba(0,0,0,0.3);
+            opacity: 0; /* Alapból rejtve, csak 30 fok után jelenik meg */
+            /* Futó vonal animáció */
+            background: transparent;
+        }
+
+        /* Szaggatott ív animáció - futó vonal effekt */
+        @keyframes dash-rotate {
+            0% { transform: translate(-50%, -50%) rotate(0deg) translateZ(-80px); }
+            100% { transform: translate(-50%, -50%) rotate(360deg) translateZ(-80px); }
+        }
+
+        #dashed-arc.animating {
+            animation: dash-rotate 8s linear infinite;
         }
 
         /* --- UI LAYER --- */
@@ -213,13 +224,14 @@
     <script>
         // --- CONFIG ---
         const CONFIG = {
-            assetsPath: './assets/',
+            assetsPath: './Assets/',
             smoothing: 0.12,
             transitionStart: 30, // Fok: frontális vége
             transitionEnd: 45,   // Fok: arc kezdete
-            baseScaleBracelet: 2.8,
+            baseScaleBracelet: 2.2,  // Finomhangolva a csukló vastagságához
             baseScaleRing: 1.2,
-            defaultHandSizePx: 200 // Referencia kézméret (pixelben) a skálázáshoz
+            defaultHandSizePx: 200, // Referencia kézméret (pixelben) a skálázáshoz
+            maxSkewAngle: 18        // Maximum skew/dőlésszög fokban (billboard light)
         };
 
         // --- STATE ---
@@ -242,13 +254,15 @@
             x: window.innerWidth/2, y: window.innerHeight/2,
             rotX: 0, rotY: 0, rotZ: 0,
             scale: 1,
-            arcOpacity: 0
+            arcOpacity: 0,
+            skewY: 0  // Új: skew a dőlésszöghöz
         };
         let target = {
             x: window.innerWidth/2, y: window.innerHeight/2,
             rotX: 0, rotY: 0, rotZ: 0,
             scale: 1,
-            arcOpacity: 0
+            arcOpacity: 0,
+            skewY: 0
         };
 
         // --- DOM ---
@@ -273,7 +287,8 @@
                 jewelryImg.style.display = 'block';
                 // Kép arányainak beállítása
                 const aspect = img.naturalHeight / img.naturalWidth;
-                const baseW = type === 'bracelet' ? 250 : 100;
+                // Karkötőnél keskenyebb, hosszabb képet várunk (ívelt)
+                const baseW = type === 'bracelet' ? 280 : 100;
                 jewelryImg.style.width = baseW + 'px';
                 jewelryImg.style.height = (baseW * aspect) + 'px';
             };
@@ -361,6 +376,7 @@
             if (!isVideoReady) return;
             if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
                 target.arcOpacity = 0;
+                target.skewY = 0;
                 return;
             }
 
@@ -378,13 +394,13 @@
             let cx, cy, rotZ, yawDeg, scale, arcSize;
 
             if (currentMode === 'bracelet') {
-                // --- KARKÖTŰ ---
+                // --- KARKÖTŐ ---
                 const wrist = lm[0];
                 const midBase = lm[9];
                 const indexBase = lm[5];
                 const pinkyBase = lm[17];
 
-                // 1. Pozíció
+                // 1. Pozíció - pontosan a csukló középpontjában
                 let rawX = (wrist.x + midBase.x) / 2;
                 let rawY = (wrist.y + midBase.y) / 2;
                 
@@ -460,19 +476,29 @@
             target.rotX = 0; // Pitchet most egyszerűsítjük a stabilitásért
             target.scale = clamp(scale, 0.5, 4.0);
 
-            // 5. Átmeneti Logika (30-45 fok)
+            // 5. Átmeneti Logika (30-45 fok) - Billboard Light Skew
             const absYaw = Math.abs(yawDeg);
             let arcOp = 0;
+            let skewAngle = 0;
             
             if (absYaw < CONFIG.transitionStart) {
-                arcOp = 0; // Csak ékszer
+                // 0-30°: csak karkötő, nincs skew
+                arcOp = 0;
+                skewAngle = 0;
             } else if (absYaw > CONFIG.transitionEnd) {
-                arcOp = 1; // Csak ív
+                // 45°+: csak ív, maximum skew
+                arcOp = 1;
+                skewAngle = CONFIG.maxSkewAngle;
             } else {
-                // 30-45 között átfedés
+                // 30-45° között: smooth átmenet
                 const t = (absYaw - CONFIG.transitionStart) / (CONFIG.transitionEnd - CONFIG.transitionStart);
-                arcOp = t; 
+                arcOp = t;
+                // Skew növekszik 0-ról maxSkewAngle-ra
+                skewAngle = t * CONFIG.maxSkewAngle;
             }
+            
+            // Skew iránya a yaw irányától függ
+            target.skewY = (yawDeg > 0 ? 1 : -1) * skewAngle;
             target.arcOpacity = arcOp;
         }
 
@@ -486,36 +512,46 @@
             state.rotX = lerp(state.rotX, target.rotX, CONFIG.smoothing);
             state.scale = lerp(state.scale, target.scale, CONFIG.smoothing);
             state.arcOpacity = lerp(state.arcOpacity, target.arcOpacity, 0.2);
+            state.skewY = lerp(state.skewY, target.skewY, CONFIG.smoothing);
 
             // Anchor pozíció
             wristAnchor.style.transform = `translate3d(${state.x}px, ${state.y}px, 0)`;
 
-            // Ékszer Transzformáció
-            // Ha az ív erős (arcOpacity közel 1), az ékszernek el kell tűnnie (opacity vagy scale)
+            // Ékszer Transzformáció - Billboard Light effekt skewY-val
+            // Ha az ív erős (arcOpacity közel 1), az ékszernek el kell tűnnie
             const jewelryVis = 1 - state.arcOpacity;
             jewelryCard.style.opacity = jewelryVis;
             
-            // Az ékszer is forgatódik a kézzel
+            // Az ékszer forgatódik és skew-olódik a kéz 3D pozíciója szerint
             jewelryCard.style.transform = `
+                translateZ(-10px)
                 rotateY(${state.rotY}deg) 
                 rotateX(${-state.rotX}deg) 
                 rotateZ(${state.rotZ}deg) 
+                skewY(${state.skewY}deg)
                 scale(${state.scale})
             `;
 
             // Dashed Arc (Hátsó Ív) Transzformáció
             dashedArc.style.opacity = state.arcOpacity;
             dashedArc.style.width = state.arcSize + 'px';
-            dashedArc.style.height = state.arcSize + 'px'; // Kör
+            dashedArc.style.height = state.arcSize + 'px';
             
             // Az ívet is ugyanúgy forgatjuk, mint a kezet (rotateY)
-            // A translateZ(-50px) kulcs a "hátra" hatáshoz
+            // translateZ(-80px) a "hátra" hatáshoz - a kéz elfedi
             dashedArc.style.transform = `
                 translate(-50%, -50%) 
                 rotateY(${state.rotY}deg) 
                 rotateX(${-state.rotX}deg) 
-                translateZ(-60px)
+                translateZ(-80px)
             `;
+            
+            // Animáció osztály kezelése - csak amikor az ív látszik
+            if (state.arcOpacity > 0.1) {
+                dashedArc.classList.add('animating');
+            } else {
+                dashedArc.classList.remove('animating');
+            }
 
             requestAnimationFrame(animate);
         }
@@ -527,4 +563,3 @@
     </script>
 </body>
 </html>
-
