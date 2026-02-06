@@ -1,6 +1,6 @@
 <!-- 
-  CosmicAR - 2D VTO (Optimized CSS Version)
-  Fix: No Ghosting, Correct Scaling, Correct Positioning
+  CosmicAR - 2D VTO (Clean Version)
+  Fix: Thicker line (15px), Transition starts at 20deg
 -->
 <!DOCTYPE html>
 <html lang="hu">
@@ -9,7 +9,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>CosmicAR - 2D VTO Clean</title>
     
-    <!-- Csak a Hands modell kell -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 
@@ -62,7 +61,7 @@
             transform: scaleX(-1);
         }
 
-        /* --- AR LAYER (Unified) --- */
+        /* --- AR LAYER --- */
         #ar-layer {
             position: absolute;
             top: 0; left: 0;
@@ -85,11 +84,9 @@
             position: absolute;
             left: 0; top: 0;
             border-radius: 50%;
-            /* Vastagabb vonal */
-            border: 10px dashed rgba(255, 255, 255, 0.85);
-            /* Blend mode: "beleolvad" a bőrbe, nem matrica */
+            /* JAVÍTVA: Vastagabb vonal (15px) */
+            border: 15px dashed rgba(255, 255, 255, 0.85);
             mix-blend-mode: overlay; 
-            /* Hátrébb tolva */
             transform: translate(-50%, -50%) rotateX(-75deg);
             opacity: 0;
             box-shadow: 0 0 20px rgba(255,255,255,0.1);
@@ -111,7 +108,6 @@
             filter: drop-shadow(0 5px 10px rgba(0,0,0,0.5));
             max-width: none;
             pointer-events: none;
-            /* Kerekített szélek */
             border-radius: 40%; 
         }
 
@@ -262,9 +258,7 @@
 
         <div id="ar-layer">
             <div id="wrist-anchor">
-                <!-- Kör -->
                 <div id="dashed-arc"></div>
-                <!-- Karkötő -->
                 <div id="jewelry-wrapper">
                     <img id="jewelry-img" src="" alt="jewelry" style="display:none;">
                 </div>
@@ -299,10 +293,10 @@
         const CONFIG = {
             assetsPath: './assets/',
             smoothing: 0.12,        
-            transitionStart: 30,   
+            // JAVÍTVA: 20 foknál kezdjen el áttűnni
+            transitionStart: 20,   
             transitionEnd: 55,     
-            // Skálázási alapok (pixel) - ezekre referenciaálunk
-            refBraceletWidth: 150, // A bracelet.png szélessége pixelben
+            refBraceletWidth: 150,
             refRingWidth: 60,
             maxRotationY: 70       
         };
@@ -501,11 +495,9 @@
                 const indexBase = lm[5];  
                 const pinkyBase = lm[17]; 
 
-                // 1. Pozíció
                 centerX = (wrist.x + midBase.x) / 2;
                 centerY = (wrist.y + midBase.y) / 2;
 
-                // 2. Forgatás Z
                 const dx = midBase.x - wrist.x;
                 const dy = midBase.y - wrist.y;
                 let angle = Math.atan2(dy, dx) * (180 / Math.PI);
@@ -516,13 +508,9 @@
                 
                 rotZ = isMirrored ? -angle : angle;
 
-                // 3. Csukló szélesség (PIXELBEN)
-                // Ez a legstabilabb méret a skálázáshoz
                 const rawWristWidth = dist(indexBase, pinkyBase);
                 target.wristWidthPx = rawWristWidth * screenW;
 
-                // 4. Yaw (Oldalra fordulás)
-                // Kéz magassága a távolság/arány becsléshez
                 const handHeight = dist(wrist, midBase); 
                 const aspect = rawWristWidth / (handHeight || 0.001);
                 const yawFactor = clamp((aspect - 0.35) / 0.5, 0, 1);
@@ -531,9 +519,6 @@
                 if (isMirrored) yawDeg = -yawDeg;
                 if (indexBase.x > pinkyBase.x) yawDeg = -yawDeg;
 
-                // 5. SKÁLA (JAVÍTVA)
-                // A karkötő mérete = (Mért csuklószélesség) / (Referencia szélesség)
-                // Így ha a csukló 150px széles, a karkötő 1.0x lesz.
                 scale = target.wristWidthPx / CONFIG.refBraceletWidth;
 
             } else {
@@ -567,15 +552,18 @@
             target.rotationY = yawDeg;
             target.scale = clamp(scale, 0.5, 3.0);
 
-            // Fade Logic
+            // FADE LOGIC
             const absYaw = Math.abs(yawDeg);
             if (absYaw < CONFIG.transitionStart) {
+                // Tenyér le (0 fok) -> Karkötő látszik
                 target.visibility = 1;
                 target.arcOpacity = 0;
             } else if (absYaw > CONFIG.transitionEnd) {
+                // Tenyér fel (max fok) -> Csak a kör látszik
                 target.visibility = 0;
                 target.arcOpacity = 1;
             } else {
+                // Átmenet (20-55 fok között)
                 const t = (absYaw - CONFIG.transitionStart) / (CONFIG.transitionEnd - CONFIG.transitionStart);
                 target.visibility = 1 - t;
                 target.arcOpacity = t;
@@ -599,24 +587,19 @@
             const pixelX = state.x * screenW;
             const pixelY = state.y * screenH;
 
-            // ANCHOR
             wristAnchor.style.left = pixelX + 'px';
             wristAnchor.style.top = pixelY + 'px';
             wristAnchor.style.transform = `rotateZ(${state.rotationZ}deg)`;
 
-            // KARKÖTÖ
             jewelryWrapper.style.opacity = state.visibility;
             jewelryWrapper.style.transform = `rotateY(${state.rotationY}deg) scale(${state.scale})`;
 
-            // DASHED ARC
-            // A kör mérete a csukló szélességének kb 3-szorosa
             const arcSize = state.wristWidthPx * 3.0;
             
             dashedArc.style.width = arcSize + 'px';
             dashedArc.style.height = arcSize + 'px';
             dashedArc.style.opacity = state.arcOpacity;
             
-            // A kör transform-ja
             dashedArc.style.transform = `
                 translate(-50%, -50%) 
                 rotateZ(${state.rotationZ}deg)
