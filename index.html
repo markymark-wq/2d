@@ -1,16 +1,22 @@
 <!-- 
-  CosmicAR - 2D Bracelet VTO (Fixed Version)
-  Perfect Corp style - Mobile First
-  FIX: Dashed arc now wraps around wrist (correct plane), dynamic sizing.
+  CosmicAR - 2D Bracelet VTO (Ultimate Edition)
+  Perfect Corp style - SelfieSegmentation Occlusion Included
 -->
 <!DOCTYPE html>
 <html lang="hu">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>CosmicAR - 2D VTO</title>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <title>CosmicAR - 2D VTO Ultimate</title>
+    
+    <!-- MediaPipe Libs -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <!-- SelfieSegmentation az okklúzióhoz -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
+
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         
@@ -22,18 +28,17 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
 
-        /* --- CONTAINER (Mobile Mode Force) --- */
+        /* --- CONTAINER (Mobile Mode) --- */
         #app-container {
             width: 100%;
             height: 100%;
-            max-width: 480px; /* Max telefon szélesség */
+            max-width: 480px;
             margin: 0 auto;
             position: relative;
             background: #000;
             overflow: hidden;
         }
 
-        /* Desktop centerelés */
         @media (min-width: 481px) {
             body {
                 background: #1a1a1a;
@@ -49,36 +54,65 @@
             }
         }
 
-        /* --- VIDEO LAYER --- */
+        /* --- 1. VIDEO LAYER (Háttér) --- */
         #video-layer {
             position: absolute;
             top: 0; left: 0;
             width: 100%; height: 100%;
             z-index: 1;
-            object-fit: cover;
         }
-        
         #input_video {
             width: 100%; height: 100%;
             object-fit: cover;
-            transform: scaleX(-1); /* Tükör */
+            transform: scaleX(-1);
         }
 
-        /* --- AR LAYER (3D Context) --- */
-        #ar-layer {
+        /* --- 2. DASHED ARC (Mögött a kéznek) --- */
+        /* Ez a réteg a Video és a Kéz között van */
+        #ar-layer-back {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 5;
+            pointer-events: none;
+            perspective: 1200px;
+        }
+
+        #dashed-arc {
+            position: absolute;
+            /* Kezdeti pozíció, JS felülírja */
+            top: 50%; left: 50%;
+            width: 200px; height: 200px;
+            border-radius: 50%;
+            border: 10px dashed rgba(255, 255, 255, 0.9);
+            transform: translate(-50%, -50%) rotateX(-75deg);
+            box-shadow: 0 0 15px rgba(255,255,255,0.1);
+            pointer-events: none;
+            opacity: 0;
+        }
+
+        /* --- 3. OCCLUSION CANVAS (A Kivágott Kéz) --- */
+        /* Ez a réteg fedi le a Dashed Arc-ot, ha a kéz előtte van */
+        #occlusion-layer {
             position: absolute;
             top: 0; left: 0;
             width: 100%; height: 100%;
             z-index: 10;
             pointer-events: none;
-            perspective: 1200px; /* Mélység érzékelés */
+            /* A canvas tartalma: csak a kéz, a háttér átlátszó */
         }
 
-        /* 
-           WRIST ANCHOR 
-           Ez az elem mozog a csuklóval.
-           A rotateZ-t itt alkalmazzuk, hogy az egész rendszer (karkötő+ív) dőljön a kézzel.
-        */
+        /* --- 4. AR LAYER FRONT (Karkötő) --- */
+        /* Ez van legfelül */
+        #ar-layer-front {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 20;
+            pointer-events: none;
+            perspective: 1200px;
+        }
+
         #wrist-anchor {
             position: absolute;
             top: 50%; left: 50%;
@@ -87,52 +121,23 @@
             will-change: transform;
         }
 
-        /* KARKÖTÖ CONTAINER */
         #jewelry-wrapper {
             position: absolute;
             left: 0; top: 0;
             transform-style: preserve-3d;
-            /* Kicsit beljebb tolva, hogy ne vágódjon le */
-            transform: translateZ(0px); 
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         #jewelry-img {
             display: block;
-            /* Középre igazítás */
             transform: translate(-50%, -50%);
-            /* Perfect Corp szintű árnyék */
-            filter: drop-shadow(0 10px 20px rgba(0,0,0,0.35));
+            filter: drop-shadow(0 8px 16px rgba(0,0,0,0.4));
             max-width: none;
             pointer-events: none;
-        }
-
-        /* 
-           DASHED ARC 
-           KÜLÖN transform: 
-           - rotateX(-75deg): Ez dönti "fel" a kört, hogy körbeölelje a csuklót, ne laposson rajta.
-           - rotateY: Ez fordítja a kamerához képest, amikor a kéz elfordul.
-        */
-        #dashed-arc {
-            position: absolute;
-            left: 0; top: 0;
-            /* Középre helyezés */
-            transform: translate(-50%, -50%) rotateX(-75deg);
-            border-radius: 50%;
-            border: 4px dashed rgba(255, 255, 255, 0.8);
-            /* Hátrébb tolva Z-ben */
-            /* box-shadow KIVÉVE, hogy ne legyen "csík" */
-            pointer-events: none;
-            opacity: 0; /* Alapból rejtett, csak forduláskor látszik */
-        }
-
-        /* Futó vonal animáció a körön */
-        @keyframes dash-spin {
-            from { border-color: rgba(255,255,255,0.4); }
-            50% { border-color: rgba(255,255,255,0.9); }
-            to { border-color: rgba(255,255,255,0.4); }
-        }
-        #dashed-arc.active {
-            animation: dash-spin 2s infinite ease-in-out;
+            /* Kerekített szélek a jobb ívhatásért */
+            border-radius: 40%; 
         }
 
         /* --- UI LAYER --- */
@@ -146,12 +151,12 @@
 
         #instruction-text {
             position: absolute;
-            top: 15%; left: 50%;
+            top: 12%; left: 50%;
             transform: translateX(-50%);
-            background: rgba(0,0,0,0.7);
+            background: rgba(0,0,0,0.75);
             color: white; 
-            padding: 10px 18px; 
-            border-radius: 20px;
+            padding: 8px 16px; 
+            border-radius: 18px;
             font-size: 13px; 
             text-align: center;
             backdrop-filter: blur(10px);
@@ -165,7 +170,7 @@
             backdrop-filter: blur(12px);
             color: white; 
             border: 1px solid rgba(255,255,255,0.15);
-            border-radius: 16px;
+            border-radius: 14px;
             font-weight: 600; 
             cursor: pointer;
             transition: all 0.2s;
@@ -181,7 +186,6 @@
             justify-content: space-between; 
             padding: 0 12px;
         }
-        
         .icon-btn { padding: 8px 12px; }
 
         .bottom-controls {
@@ -275,25 +279,27 @@
 <body>
 
     <div id="app-container">
-        <div class="loading" id="loading">Kamera inicializálása...</div>
+        <div class="loading" id="loading">AI Modellek betöltése...<br>(Ez eltarthat egy ideig)</div>
 
-        <!-- Video Layer -->
+        <!-- 1. Background Video -->
         <div id="video-layer">
             <video id="input_video" playsinline></video>
         </div>
 
-        <!-- AR Layer -->
-        <div id="ar-layer">
-            <!-- Wrist Anchor: A teljes kéz rendszer középpontja -->
+        <!-- 2. Back AR Layer (Dashed Arc) -->
+        <div id="ar-layer-back">
+            <div id="dashed-arc"></div>
+        </div>
+
+        <!-- 3. Occlusion Layer (Masked Hand Canvas) -->
+        <canvas id="occlusion-layer"></canvas>
+
+        <!-- 4. Front AR Layer (Bracelet) -->
+        <div id="ar-layer-front">
             <div id="wrist-anchor">
-                
-                <!-- Karkötő: A bőrön fekszik -->
                 <div id="jewelry-wrapper">
                     <img id="jewelry-img" src="" alt="jewelry" style="display:none;">
                 </div>
-
-                <!-- Dashed Arc: A csukló körül áll (rotateX miatt) -->
-                <div id="dashed-arc"></div>
             </div>
         </div>
 
@@ -324,13 +330,13 @@
     <script>
         // --- KONFIGURÁCIÓ ---
         const CONFIG = {
-            assetsPath: './assets/',
-            smoothing: 0.12,        // Simítás (kisebb = lassabb, stabilabb)
-            transitionStart: 25,   // Melyik szögnél kezdjen áttűnni
-            transitionEnd: 50,     // Melyik szögnél legyen teljesen átcsúszva
-            baseScaleBracelet: 1.6, // Alap skála karkötőhöz
-            baseScaleRing: 1.0,     // Alap skála gyűrűhöz
-            maxRotationY: 60       // Max oldalfordulás fokban
+            assetsPath: './assets/', // Kisbetűs mappa!
+            smoothing: 0.12,        
+            transitionStart: 30,   // Későbbi fade out jobb átmenetet ad
+            transitionEnd: 55,     
+            baseScaleBracelet: 2.2, // Kicsit nagyobb alapméret
+            baseScaleRing: 1.0,     
+            maxRotationY: 70       
         };
 
         // --- ÁLLAPOT ---
@@ -348,15 +354,14 @@
         let isMirrored = true;
         let isVideoReady = false;
         
-        // Animációs állapot (simított értékek)
         let state = {
             x: 0.5, y: 0.5,
-            rotationZ: 0,        // Kar dőlése (Roll)
-            rotationY: 0,        // Kéz oldalfordulása (Yaw)
+            rotationZ: 0,
+            rotationY: 0,
             scale: 1,
             arcOpacity: 0,
             visibility: 1,
-            wristWidth: 0.1      // Csukló szélessége normalizálva
+            wristWidth: 0.1
         };
         
         let target = {
@@ -369,12 +374,14 @@
             wristWidth: 0.1
         };
 
-        // --- DOM REFERENCIÁK ---
+        // --- DOM ---
         const videoElement = document.getElementById('input_video');
         const wristAnchor = document.getElementById('wrist-anchor');
         const jewelryWrapper = document.getElementById('jewelry-wrapper');
         const jewelryImg = document.getElementById('jewelry-img');
         const dashedArc = document.getElementById('dashed-arc');
+        const occlusionCanvas = document.getElementById('occlusion-layer');
+        const ctxOcclusion = occlusionCanvas.getContext('2d');
         const instructions = document.getElementById('instruction-text');
         const fingerControls = document.getElementById('finger-controls');
         const fingerLabel = document.getElementById('finger-label');
@@ -382,7 +389,7 @@
         const btnRing = document.getElementById('btn-ring');
         const appContainer = document.getElementById('app-container');
 
-        // --- ASSET BETÖLTÉS ---
+        // --- ASSET ---
         function loadAsset(type) {
             const img = new Image();
             const src = type === 'bracelet' 
@@ -393,22 +400,68 @@
                 jewelryImg.src = src;
                 jewelryImg.style.display = 'block';
                 
-                // Méret beállítása - a kép arányait megtartva, de alap méretet szabva
+                // Alapméret beállítása
                 const aspect = img.naturalHeight / img.naturalWidth;
-                const baseW = type === 'bracelet' ? 240 : 80; // Base pixel méret a skálázás előtt
+                const baseW = type === 'bracelet' ? 260 : 90; 
                 jewelryImg.style.width = baseW + 'px';
                 jewelryImg.style.height = (baseW * aspect) + 'px';
             };
             
             img.onerror = () => {
                 console.error("Hiba:", src);
-                instructions.textContent = "Hiba: Kép nem található (Assets mappa?)";
+                instructions.textContent = "Hiba: Kép nem található (assets mappa?)";
             };
             
             img.src = src;
         }
 
-        // --- MEDIAPIP BEÁLLÍTÁS ---
+        // --- OCCLUSION CANVAS SETUP ---
+        function resizeCanvas() {
+            occlusionCanvas.width = appContainer.offsetWidth;
+            occlusionCanvas.height = appContainer.offsetHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // --- SEGMENTATION LOGIC ---
+        // Ez a függvény rajzolja ki a "kéz réteget" a kör fölé
+        function onSegmentationResults(results) {
+            if (!results.segmentationMask) return;
+
+            // 1. Töröljük a canvast
+            ctxOcclusion.save();
+            ctxOcclusion.clearRect(0, 0, occlusionCanvas.width, occlusionCanvas.height);
+
+            // 2. Rajzoljuk a videót a canvasra (teljes képernyő)
+            ctxOcclusion.drawImage(results.image, 0, 0, occlusionCanvas.width, occlusionCanvas.height);
+
+            // 3. Alkalmazzuk a maszkot (destination-in: csak ott marad, ahol a maszk nem átlátszó)
+            ctxOcclusion.globalCompositeOperation = 'destination-in';
+            ctxOcclusion.drawImage(results.segmentationMask, 0, 0, occlusionCanvas.width, occlusionCanvas.height);
+
+            // 4. Ha tükör mód van, a maszkot is tükröznünk kell, mert a segmentáció visszaadja az eredeti képet
+            if (isMirrored) {
+                 // Trükk: A maszkot már rajzoláskor tükrözhetjük, de a destination-in után már késő.
+                 // Egyszerűbb megoldás: Ha a videó tükrözött CSS-ben, a canvasnak is tükrözöttnek kell lennie.
+                 // De a canvas pixel adatait most CSS-sel tükrözzük:
+                 occlusionCanvas.style.transform = 'scaleX(-1)';
+            } else {
+                 occlusionCanvas.style.transform = 'scaleX(1)';
+            }
+
+            ctxOcclusion.restore();
+        }
+
+        const selfieSegmentation = new SelfieSegmentation({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`;
+        }});
+        selfieSegmentation.setOptions({
+            modelSelection: 1, // 0: general, 1: landscape (faster for mobile)
+        });
+        selfieSegmentation.onResults(onSegmentationResults);
+
+
+        // --- HANDS TRACKING ---
         const hands = new Hands({
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
         });
@@ -422,6 +475,7 @@
 
         hands.onResults(onResults);
 
+
         // --- KAMERA ---
         function initCamera() {
             document.getElementById('loading').style.display = 'block';
@@ -431,7 +485,11 @@
             }
 
             window.camera = new Camera(videoElement, {
-                onFrame: async () => await hands.send({image: videoElement}),
+                onFrame: async () => {
+                    // Futtatjuk mindkét modellt
+                    await hands.send({image: videoElement});
+                    await selfieSegmentation.send({image: videoElement});
+                },
                 width: 1280, 
                 height: 720,
                 facingMode: currentCamera
@@ -480,7 +538,6 @@
                 fingerControls.classList.add('visible');
                 updateFingerLabel();
             }
-            // Reset state
             state.arcOpacity = 0;
             target.arcOpacity = 0;
         }
@@ -500,7 +557,7 @@
             instructions.textContent = "Nyújtsd ki a " + fingerNames[currentFingerIndex].toLowerCase() + "-t";
         }
 
-        // --- MATEMATIKA ---
+        // --- MATH ---
         function lerp(start, end, factor) { 
             return start + (end - start) * factor; 
         }
@@ -513,7 +570,7 @@
             return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2)); 
         }
 
-        // --- MAIN LOGIC ---
+        // --- MAIN LOGIC (Hands) ---
         function onResults(results) {
             if (!isVideoReady) return;
             
@@ -535,45 +592,40 @@
                 const midBase = lm[9];    
                 const indexBase = lm[5];  
                 const pinkyBase = lm[17]; 
+                const midTip = lm[12];    // Ujjhegy a skálához
 
-                // 1. Pozíció (Csukló és Középső ujj közötti pont)
+                // 1. Pozíció
                 centerX = (wrist.x + midBase.x) / 2;
                 centerY = (wrist.y + midBase.y) / 2;
 
-                // 2. Forgatás Z (Kar dőlése)
+                // 2. Forgatás Z (Roll)
                 const dx = midBase.x - wrist.x;
                 const dy = midBase.y - wrist.y;
                 let angle = Math.atan2(dy, dx) * (180 / Math.PI);
-                angle = angle + 90; // Korrekció, hogy a karkötő vízszintesen álljon
+                angle = angle + 90;
                 
-                // Stabilizálás (visszaugrás elkerülése)
+                // Wrap around fix
                 if (angle - state.rotationZ > 180) angle -= 360;
                 if (angle - state.rotationZ < -180) angle += 360;
                 
                 rotZ = isMirrored ? -angle : angle;
 
-                // 3. Csukló szélesség mérése (a skálához)
+                // 3. Yaw (Oldalra fordulás)
+                const handHeight = dist(wrist, midTip); // Ujjhegyig mérünk a stabilabb skálához
                 const rawWristWidth = dist(indexBase, pinkyBase);
                 target.wristWidth = rawWristWidth;
 
-                // 4. Yaw (Oldalra fordulás)
-                // A kéz szélességének és magasságának aránya változik, amikor elfordul
-                const handHeight = dist(wrist, midBase);
                 const aspect = rawWristWidth / (handHeight || 0.001);
-                
-                // Aspect kb 0.35-0.40 ha oldalt van, 0.8-1.0 ha frontál
                 const yawFactor = clamp((aspect - 0.35) / 0.5, 0, 1);
                 yawDeg = (1 - yawFactor) * CONFIG.maxRotationY;
                 
-                // Irány korrekció
                 if (isMirrored) yawDeg = -yawDeg;
-                // Ha a tenyér fordul el, nem csak a hát
                 if (indexBase.x > pinkyBase.x) yawDeg = -yawDeg;
 
-                // 5. Skála a csukló szélességéből
-                // Convert normalized width to pixels roughly, then scale
-                const wristWidthPx = rawWristWidth * screenW;
-                scale = (wristWidthPx / 100) * CONFIG.baseScaleBracelet;
+                // 4. Skála (JAVÍTVA: Kéz magasság alapján)
+                // A handHeight stabilabb, mert oldalra forduláskor nem változik annyira, mint a szélesség
+                const handHeightPx = handHeight * screenH;
+                scale = (handHeightPx / 250) * CONFIG.baseScaleBracelet; // 250px referencia magasság
 
             } else {
                 // --- GYŰRŰ MÓD ---
@@ -605,9 +657,9 @@
             target.y = centerY;
             target.rotationZ = rotZ;
             target.rotationY = yawDeg;
-            target.scale = clamp(scale, 0.5, 3.5);
+            target.scale = clamp(scale, 0.5, 4.0);
 
-            // --- ÁTTŰNÉSI LOGIKA ---
+            // Fade Logic
             const absYaw = Math.abs(yawDeg);
             if (absYaw < CONFIG.transitionStart) {
                 target.visibility = 1;
@@ -627,7 +679,6 @@
             const screenW = appContainer.offsetWidth;
             const screenH = appContainer.offsetHeight;
 
-            // Simítás
             state.x = lerp(state.x, target.x, CONFIG.smoothing);
             state.y = lerp(state.y, target.y, CONFIG.smoothing);
             state.rotationZ = lerp(state.rotationZ, target.rotationZ, CONFIG.smoothing);
@@ -635,50 +686,39 @@
             state.scale = lerp(state.scale, target.scale, CONFIG.smoothing);
             state.arcOpacity = lerp(state.arcOpacity, target.arcOpacity, 0.1);
             state.visibility = lerp(state.visibility, target.visibility, CONFIG.smoothing);
-            state.wristWidth = lerp(state.wristWidth, target.wristWidth, 0.1);
 
-            // Pixel pozíció
             const pixelX = state.x * screenW;
             const pixelY = state.y * screenH;
 
-            // 1. Wrist Anchor mozgatása + Z forgatás (Dőlés a kézzel)
+            // ANCHOR (Közös tengely)
             wristAnchor.style.left = pixelX + 'px';
             wristAnchor.style.top = pixelY + 'px';
             wristAnchor.style.transform = `rotateZ(${state.rotationZ}deg)`;
 
-            // 2. KARKÖTÖ
-            // Csak Y forgatás (oldalra fordul) és Skálázás
+            // KARKÖTÖ
             jewelryWrapper.style.opacity = state.visibility;
             jewelryWrapper.style.transform = `rotateY(${state.rotationY}deg) scale(${state.scale})`;
 
-            // 3. DASHED ARC
-            // Méret: dinamikusan a csukló szélességéből
-            // A CSS rotateX(-75deg) van alapból, itt hozzáadjuk a méretet és az Y forgatást
+            // DASHED ARC
+            // Hátsó rétegben van, de pozícióját frissítjük
+            // Mivel ez nem a wristAnchor gyermeke, neki külön kell számolni a pozíciót és a forgatást
             const wristWpx = state.wristWidth * screenW;
-            const arcSize = Math.max(wristWpx * 2.6, 150); // Min 150px, de inkább a csuklóhoz igazít
+            const arcSize = Math.max(wristWpx * 2.8, 180);
             
             dashedArc.style.width = arcSize + 'px';
             dashedArc.style.height = arcSize + 'px';
+            dashedArc.style.left = pixelX + 'px';
+            dashedArc.style.top = pixelY + 'px';
             dashedArc.style.opacity = state.arcOpacity;
             
-            // Transzformáció:
-            // - translate(-50%, -50%) középre
-            // - rotateY(state.rotationY) -> a kör "fárad" a kamerához
-            // - rotateX(-75deg) -> áll a csuklóból (már CSS-ben van, de JS override esetén itt kell)
-            // Mivel a szülő (#wrist-anchor) már rotateZ-el fordul, a kör követi a kar dőlését.
-            
+            // A kör transform-ja: Pozíció + Forgatás
+            // Mivel külön layerben van, ide be kell írni a rotateZ-t is!
             dashedArc.style.transform = `
                 translate(-50%, -50%) 
+                rotateZ(${state.rotationZ}deg)
                 rotateY(${state.rotationY}deg) 
                 rotateX(-75deg)
             `;
-
-            // Animáció toggle
-            if (state.arcOpacity > 0.1) {
-                dashedArc.classList.add('active');
-            } else {
-                dashedArc.classList.remove('active');
-            }
 
             requestAnimationFrame(animate);
         }
@@ -690,4 +730,3 @@
     </script>
 </body>
 </html>
-
