@@ -1,11 +1,10 @@
 <!-- 
-  CosmicAR - 2D Bracelet VTO (Fixed Rotation & Depth - FULL VERSION)
+  CosmicAR - 2D Bracelet VTO (Fixed with Google Edge / World Landmarks Logic)
   
-  VÁLTOZTATÁSOK AZ EREDETIHEZ KÉPESZT (TOVÁBBFEJLESZTÉS):
-  - A "onResults" matematikai része átírva "Google Edge" / World Landmarks logikára.
-  - A forgatás iránya (Yaw) megfordítva a térbeli követés érdekében.
-  - A szaggatott vonal mélysége (Z) korrigálva, hogy a csukló körül álljon.
-  - Valós 3D méretarány (skálázás) bevezetve.
+  VÁLTOZTATÁSOK AZ EREDETIHEZ KÉPESZT:
+  - A "onResults" matematikai része teljesen átírva.
+  - Mostantól "multiHandWorldLandmarks" (3D koordináták) alapján számolunk.
+  - Ez javítja a "túlre fordulásból való úszást" és a skálázást.
 -->
 <!DOCTYPE html>
 <html lang="hu">
@@ -118,8 +117,8 @@
             border: 10px dashed rgba(255, 255, 255, 0.8); /* Itt növeltük vastagabbra */
             pointer-events: none;
             opacity: 0; 
-            /* Kis hátra tolás Z-ben, hogy a csukló körül / mögött tűnjön */
-            transform: translate(-50%, -50%) translateZ(-60px) rotateX(-75deg);
+            /* Kis hátra tolás Z-ben, hogy ne lógjon ki előre */
+            transform: translate(-50%, -50%) translateZ(-20px) rotateX(-75deg);
         }
 
         @keyframes dash-spin {
@@ -508,7 +507,7 @@
             return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2)); 
         }
 
-        // --- MAIN LOGIC (GOOGLE EDGE STYLE / WORLD LANDMARKS) ---
+        // --- MAIN LOGIC (MÓDOSÍTOTT VERZIÓ) ---
         function onResults(results) {
             if (!isVideoReady) return;
             
@@ -518,110 +517,76 @@
                 return;
             }
 
-            // Screen Landmarks (2D)
             const lm = results.multiHandLandmarks[0];
-            // World Landmarks (3D - MÉTERBEN) - EZ A KULCS!
             const worldLm = results.multiHandWorldLandmarks[0];
             
             const screenW = appContainer.offsetWidth;
             const screenH = appContainer.offsetHeight;
 
-            let centerX, centerY, rotZ, yawDeg, scale;
+            let centerX, centerY, rotZ, yawDeg, scale, wristWidthPx;
 
             if (currentMode === 'bracelet') {
-                // KÉSZÍTÜNK EL VEKTOROKAT A 3D PONTOKBÓL
-                // 0: Wrist (Csukló), 9: Middle Finger MCP (Középső ujj alapja)
-                // 5: Index MCP (Mutatóujj alapja), 17: Pinky MCP (Kisujj alapja)
+                const w = worldLm[0];  // Wrist
+                const m = worldLm[9];  // Middle MCP
+                const i = worldLm[5];  // Index MCP
+                const p = worldLm[17]; // Pinky MCP
 
-                const w = worldLm[0];
-                const m = worldLm[9];
-                const i = worldLm[5];
-                const p = worldLm[17];
+                // 1. POZÍCIÓ - CSAK a csukló (0. landmark)
+                centerX = lm[0].x;
+                centerY = lm[0].y;
 
-                // 1. POZÍCIÓ (Screen coords - mert a képernyőhöz kell illeszteni)
-                centerX = (lm[0].x + lm[9].x) / 2;
-                centerY = (lm[0].y + lm[9].y) / 2;
+                // 2. CSUKLÓ SZÉLESSÉG (5-ös és 17-es távolsága KÉPERNYŐN)
+                const indexScreen = lm[5];
+                const pinkyScreen = lm[17];
+                wristWidthPx = Math.sqrt(
+                    Math.pow((indexScreen.x - pinkyScreen.x) * screenW, 2) +
+                    Math.pow((indexScreen.y - pinkyScreen.y) * screenH, 2)
+                );
 
-                // 2. FORGATÁS Z (ROLL) - 3D Vektor alapján
-                // A Wrist->Middle vektor X és Y komponenséből számolunk
-                // Ez pontosabb, mint a képernyő pixeljei
+                // 3. FORGATÁS Z (ROLL)
                 const dx = m.x - w.x;
                 const dy = m.y - w.y;
-                let angle = Math.atan2(dy, dx) * (180 / Math.PI);
-                angle = angle + 90; 
+                let angle = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
                 
-                // Stabilizáció
                 if (angle - state.rotationZ > 180) angle -= 360;
                 if (angle - state.rotationZ < -180) angle += 360;
                 
                 rotZ = isMirrored ? -angle : angle;
 
-                // 3. SKÁLA (VALÓDI MÉRET) - World Landmarks távolságából
-                // Az Index és Pinky távolsága méterben
-                const worldWristWidth = Math.sqrt(
-                    Math.pow(i.x - p.x, 2) + 
-                    Math.pow(i.y - p.y, 2) + 
-                    Math.pow(i.z - p.z, 2)
-                );
-                
-                // Konvertálás pixelre (worldScaleFactor egy kísérleti érték)
-                scale = worldWristWidth * CONFIG.worldScaleFactor * CONFIG.baseScaleBracelet;
-                
-                // 4. YAW (Oldalra fordulás) - MÉLYSÉG (Z) alapján
-                // A MediaPipe World Coordinates-ben: Z a kamera távolsága
-                // Ha a tenyér a kamerához fordul (Back of hand), akkor a FingerBase (9) közelebb van (kisebb Z), mint a Wrist (0).
-                // Ha a tenyér felfelé fordul (Palm facing away), akkor a Wrist (0) közelebb van.
-                
-                const zDiff = w.z - m.z; // Negatív: ujj közelebb (tenyér lefelé), Pozitív: csukló közelebb (tenyér felfelé)
-                
-                // Yaw szög becslése a mélységkülönbségből és az X eltolásból
-                // Ez a függvény meghatározza, mennyire fordulunk oldalra
-                let sideFactor = 0;
-                
-                // Egyszerűsített logika a Z tengely irányának követésére
-                // Ha zDiff > 0.05 -> Tenyér felfelé
-                // Ha zDiff < -0.05 -> Tenyér lefelé
-                
-                // Oldalirány (balra-jobbra) az X koordináták alapján
+                // 4. YAW (Oldalra fordulás)
+                const zDiff = w.z - m.z;
                 const xDiff = m.x - w.x;
-                
-                // A forgatás összevonása:
-                // XDiff adja a "tengelyt", ZDiff adja az irányt
-                // JAVÍTÁS: A negatív előjel fordítja a forgatás irányát, ahogy kérted
-                yawDeg = -Math.atan2(xDiff, Math.abs(zDiff)) * (180 / Math.PI);
-                
+                yawDeg = Math.atan2(xDiff, Math.abs(zDiff)) * (180 / Math.PI);
                 if (isMirrored) yawDeg = -yawDeg;
 
-                // Állapotmentés a láthatósághoz (Tenyér felfelé vs lefelé)
-                // Ha zDiff pozitív, a tenyér a kamerától távolabb van (Tenyér felfelé)
-                target.isPalmFacingUp = zDiff > 0.02; 
+                target.isPalmFacingUp = zDiff > 0.02;
+                
+                // SKÁLA - a csukló szélességéhez igazítva
+                scale = wristWidthPx / 120; // 120px az alap karkötő szélesség
 
             } else {
-                // GYŰRŰ MÓD (Hasonló vektor logika)
+                // GYŰRŰ MÓD
                 const w = worldLm[0];
                 const tip = worldLm[fingerLandmarks[currentFingerIndex].tip];
                 const mcp = worldLm[fingerLandmarks[currentFingerIndex].mcp];
 
-                // Pozíció (Screen)
                 centerX = (lm[fingerLandmarks[currentFingerIndex].mcp].x + lm[fingerLandmarks[currentFingerIndex].tip].x) / 2;
                 centerY = (lm[fingerLandmarks[currentFingerIndex].mcp].y + lm[fingerLandmarks[currentFingerIndex].tip].y) / 2;
 
-                // Rotáció (World Vector)
                 const dx = tip.x - mcp.x;
                 const dy = tip.y - mcp.y;
-                let angle = Math.atan2(dy, dx) * (180 / Math.PI);
-                angle = angle + 90;
+                let angle = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
                 
                 if (angle - state.rotationZ > 180) angle -= 360;
                 if (angle - state.rotationZ < -180) angle += 360;
 
                 rotZ = isMirrored ? -angle : angle;
                 yawDeg = 0;
-                target.isPalmFacingUp = false; // Gyűrűnél nincs ilyen átmenet most
+                target.isPalmFacingUp = false;
 
-                // Skála (World Length)
                 const len = Math.sqrt(Math.pow(tip.x - mcp.x, 2) + Math.pow(tip.y - mcp.y, 2) + Math.pow(tip.z - mcp.z, 2));
-                scale = len * CONFIG.worldScaleFactor * 4; // Gyűrűnél nagyobb szorzó
+                scale = len * CONFIG.worldScaleFactor * 4;
+                wristWidthPx = 0;
             }
 
             if (isMirrored) centerX = 1 - centerX;
@@ -631,16 +596,14 @@
             target.rotationZ = rotZ;
             target.rotationY = clamp(yawDeg, -CONFIG.maxRotationY, CONFIG.maxRotationY);
             target.scale = clamp(scale, 0.5, 3.5);
+            target.wristWidth = wristWidthPx;
 
-            // --- ÁTTŰNÉSI LOGIKA (Z-DEPTH ALAPÚ) ---
+            // ÁTTŰNÉSI LOGIKA
             if (currentMode === 'bracelet') {
-                // A target.isPalmFacingUp változót a Z diff alapján állítottuk be fent
                 if (!target.isPalmFacingUp) {
-                    // Tenyér lefelé -> KARKÖTŐ LÁTSZIK
                     target.visibility = 1;
                     target.arcOpacity = 0;
                 } else {
-                    // Tenyér felfelé -> SZAGGATOTT VONAL LÁTSZIK
                     target.visibility = 0;
                     target.arcOpacity = 1;
                 }
@@ -650,12 +613,11 @@
             }
         }
 
-        // --- RENDER LOOP ---
+        // --- RENDER LOOP (MÓDOSÍTOTT VERZIÓ) ---
         function animate() {
             const screenW = appContainer.offsetWidth;
             const screenH = appContainer.offsetHeight;
 
-            // Simítás
             state.x = lerp(state.x, target.x, CONFIG.smoothing);
             state.y = lerp(state.y, target.y, CONFIG.smoothing);
             state.rotationZ = lerp(state.rotationZ, target.rotationZ, CONFIG.smoothing);
@@ -665,22 +627,20 @@
             state.visibility = lerp(state.visibility, target.visibility, CONFIG.smoothing);
             state.wristWidth = lerp(state.wristWidth, target.wristWidth, 0.1);
 
-            // Pixel pozíció
             const pixelX = state.x * screenW;
             const pixelY = state.y * screenH;
 
-            // 1. Wrist Anchor mozgatása
+            // 1. Wrist Anchor (csak pozíció és Z forgatás)
             wristAnchor.style.left = pixelX + 'px';
             wristAnchor.style.top = pixelY + 'px';
             wristAnchor.style.transform = `rotateZ(${state.rotationZ}deg)`;
 
-            // 2. KARKÖTÖ
+            // 2. KARKÖTŐ - a csukló szélességéhez igazított méret
             jewelryWrapper.style.opacity = state.visibility;
             jewelryWrapper.style.transform = `rotateY(${state.rotationY}deg) scale(${state.scale})`;
 
-            // 3. DASHED ARC
-            const wristWpx = state.wristWidth * screenW;
-            const arcSize = Math.max(wristWpx * 2.6, 150); 
+            // 3. DASHED ARC - PONTOSAN a csukló szélessége
+            const arcSize = state.wristWidth * 1.2; // 20%-kal nagyobb, mint a csukló
             
             dashedArc.style.width = arcSize + 'px';
             dashedArc.style.height = arcSize + 'px';
@@ -688,7 +648,6 @@
             
             dashedArc.style.transform = `
                 translate(-50%, -50%) 
-                translateZ(-60px)
                 rotateY(${state.rotationY}deg) 
                 rotateX(-75deg)
             `;
